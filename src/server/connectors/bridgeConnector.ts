@@ -9,6 +9,8 @@ export class BridgeTikTokConnector implements ITikTokConnector {
   private status: ConnectorStatus = 'disconnected';
   private config: ConnectionConfig | null = null;
   private ws: any = null;
+  private bridgeAvailable: boolean = false;
+  private liveConfirmed: boolean = false;
   private eventListeners: Set<(rawEvent: any) => void> = new Set();
   private statusListeners: Set<(status: ConnectorStatusEvent) => void> = new Set();
   private reconnectManager: ReconnectManager;
@@ -30,17 +32,30 @@ export class BridgeTikTokConnector implements ITikTokConnector {
     return this.status;
   }
 
+  public isBridgeAvailable(): boolean {
+    return this.bridgeAvailable;
+  }
+
+  public isLiveConfirmed(): boolean {
+    return this.liveConfirmed;
+  }
+
   public async connect(config: ConnectionConfig): Promise<boolean> {
     this.config = config;
 
-    if (!config.username || config.username.trim().length === 0) {
+    const cleanUsername = (config.username || '').replace(/^@/, '').trim();
+    if (!cleanUsername) {
       this.status = 'error';
+      this.bridgeAvailable = false;
+      this.liveConfirmed = false;
       this.lastErrorMessage = 'Nombre de usuario de TikTok requerido.';
       this.notifyStatus();
       return false;
     }
 
     this.status = 'connecting';
+    this.bridgeAvailable = false;
+    this.liveConfirmed = false;
     this.lastErrorMessage = undefined;
     this.notifyStatus();
 
@@ -55,70 +70,119 @@ export class BridgeTikTokConnector implements ITikTokConnector {
     const bridgeUrl = config.bridgeServerUrl || 'ws://localhost:21213';
 
     return new Promise((resolve) => {
+      let resolved = false;
+      const finish = (success: boolean) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(success);
+        }
+      };
+
       try {
         const ws = new WebSocketClass(bridgeUrl);
         this.ws = ws;
 
+        // Handshake verification timeout: waits for EXPLICIT live confirmation
         const timeout = setTimeout(() => {
-          if (this.status === 'connecting') {
+          if (!this.liveConfirmed) {
             this.status = 'error';
-            this.lastErrorMessage = `Tiempo de espera agotado al conectar con el puente en ${bridgeUrl}.`;
+            if (this.bridgeAvailable) {
+              this.lastErrorMessage = `El puente en ${bridgeUrl} está activo, pero no confirmó una transmisión TikTok LIVE para @${cleanUsername}. Verifica que el streamer esté en directo.`;
+            } else {
+              this.lastErrorMessage = `Tiempo de espera agotado al conectar con el puente de TikTok en ${bridgeUrl}.`;
+            }
             this.notifyStatus();
-            this.reconnectManager.handleDisconnect('Timeout de conexión inicial');
+            this.reconnectManager.handleDisconnect(this.lastErrorMessage);
             try { ws.close(); } catch {}
-            resolve(false);
+            finish(false);
           }
-        }, 5000);
+        }, 7000);
 
         ws.onopen = () => {
-          // Socket opened to bridge daemon, sending handshake to verify live stream
+          // Transport level connected: bridge daemon is reachable, but LIVE is NOT yet confirmed
+          this.bridgeAvailable = true;
+          this.liveConfirmed = false;
           this.status = 'connecting';
           this.lastErrorMessage = undefined;
+          this.notifyStatus();
 
-          // Handshake payload: specify public username only (NO PASSWORDS)
-          ws.send(
-            JSON.stringify({
-              command: 'CONNECT',
-              username: config.username.replace(/^@/, '').trim(),
-            })
-          );
-
-          // We mark connected once socket is stable and bridge acknowledges or stays open
-          setTimeout(() => {
-            if (this.status === 'connecting' && ws.readyState === WebSocketClass.OPEN) {
-              clearTimeout(timeout);
-              this.status = 'connected';
-              this.lastErrorMessage = undefined;
-              this.reconnectManager.reset();
-              this.notifyStatus();
-              resolve(true);
-            }
-          }, 600);
+          // Send explicit subscription request to bridge daemon (NO passwords, public username only)
+          try {
+            ws.send(
+              JSON.stringify({
+                command: 'CONNECT',
+                event: 'setUniqueId',
+                username: cleanUsername,
+              })
+            );
+          } catch (err: any) {
+            clearTimeout(timeout);
+            this.status = 'error';
+            this.lastErrorMessage = `Fallo al enviar comando de suscripción al puente: ${err.message}`;
+            this.notifyStatus();
+            finish(false);
+          }
         };
 
         ws.onmessage = (event: any) => {
           try {
             const rawData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
 
-            // Check if bridge returned an explicit error (e.g. user offline or room not found)
-            if (rawData.status === 'error' || rawData.type === 'ERROR' || rawData.error) {
-              const errMsg = rawData.message || rawData.error || 'La transmisión de TikTok no está disponible o el usuario no está en vivo.';
+            // 1. Detect explicit errors or offline state from TikTok LIVE bridge
+            const isError =
+              rawData.status === 'error' ||
+              rawData.status === 'offline' ||
+              rawData.type === 'ERROR' ||
+              rawData.type === 'OFFLINE' ||
+              rawData.event === 'disconnected' ||
+              rawData.liveStatus === 'offline' ||
+              Boolean(rawData.error);
+
+            if (isError) {
+              clearTimeout(timeout);
+              this.liveConfirmed = false;
               this.status = 'error';
-              this.lastErrorMessage = errMsg;
+              const rawMsg = rawData.message || rawData.error || rawData.reason;
+              if (rawMsg && String(rawMsg).toLowerCase().includes('offline')) {
+                this.lastErrorMessage = `El streamer @${cleanUsername} no está transmitiendo en vivo actualmente.`;
+              } else if (rawMsg) {
+                this.lastErrorMessage = `Error de TikTok LIVE: ${rawMsg}`;
+              } else {
+                this.lastErrorMessage = `La transmisión de TikTok no está disponible para @${cleanUsername}.`;
+              }
               this.notifyStatus();
+              try { ws.close(); } catch {}
+              finish(false);
               return;
             }
 
-            // Check if bridge confirmed connection
-            if (rawData.status === 'connected' || rawData.type === 'CONNECTED' || rawData.event === 'connected') {
+            // 2. Detect explicit confirmation of active TikTok LIVE stream
+            const isLiveConfirmed =
+              rawData.status === 'connected' ||
+              rawData.type === 'CONNECTED' ||
+              rawData.type === 'ROOM_INFO' ||
+              rawData.type === 'LIVE_CONFIRMED' ||
+              rawData.event === 'connected' ||
+              rawData.event === 'roomUser' ||
+              rawData.liveStatus === 'live' ||
+              rawData.liveStatus === 'LIVE' ||
+              rawData.isConnected === true ||
+              (rawData.roomId && !rawData.error);
+
+            if (isLiveConfirmed && !this.liveConfirmed) {
               clearTimeout(timeout);
+              this.liveConfirmed = true;
               this.status = 'connected';
               this.lastErrorMessage = undefined;
+              if (rawData.roomId && this.config) {
+                this.config.roomId = String(rawData.roomId);
+              }
               this.reconnectManager.reset();
               this.notifyStatus();
-              resolve(true);
+              finish(true);
             }
 
+            // Forward incoming stream events to registered listeners
             this.eventListeners.forEach((cb) => {
               try { cb(rawData); } catch {}
             });
@@ -127,28 +191,42 @@ export class BridgeTikTokConnector implements ITikTokConnector {
 
         ws.onerror = (err: any) => {
           clearTimeout(timeout);
+          this.bridgeAvailable = false;
+          this.liveConfirmed = false;
           this.status = 'error';
-          this.lastErrorMessage = `Error de socket en ${bridgeUrl}. Asegúrate de que el conector de TikTok esté corriendo.`;
+          this.lastErrorMessage = `Error de conexión con el puente en ${bridgeUrl}. Comprueba que el daemon tiktok-live-connector esté ejecutándose.`;
           this.notifyStatus();
-          this.reconnectManager.handleDisconnect('Error en conexión de socket');
-          resolve(false);
+          this.reconnectManager.handleDisconnect(this.lastErrorMessage);
+          finish(false);
         };
 
         ws.onclose = (event: any) => {
-          if (this.status === 'connected') {
+          clearTimeout(timeout);
+          const wasConnected = this.status === 'connected' || this.liveConfirmed;
+          this.bridgeAvailable = false;
+          this.liveConfirmed = false;
+
+          if (wasConnected) {
             this.status = 'disconnected';
-            const reason = event.reason || 'Conexión cerrada por el puente o corte de transmisión';
+            const reason = event.reason || 'Conexión con TikTok LIVE finalizada o cortada.';
             this.lastErrorMessage = reason;
             this.notifyStatus();
             this.reconnectManager.handleDisconnect(reason);
+          } else if (!resolved) {
+            this.status = 'error';
+            this.lastErrorMessage = this.lastErrorMessage || 'El puente cerró la conexión antes de confirmar la transmisión en vivo.';
+            this.notifyStatus();
+            finish(false);
           }
         };
       } catch (err: any) {
+        this.bridgeAvailable = false;
+        this.liveConfirmed = false;
         this.status = 'error';
-        this.lastErrorMessage = err instanceof Error ? err.message : 'Error inesperado';
+        this.lastErrorMessage = err instanceof Error ? err.message : 'Error inesperado al conectar';
         this.notifyStatus();
         this.reconnectManager.handleDisconnect(this.lastErrorMessage);
-        resolve(false);
+        finish(false);
       }
     });
   }
@@ -159,6 +237,8 @@ export class BridgeTikTokConnector implements ITikTokConnector {
       try { this.ws.close(); } catch {}
       this.ws = null;
     }
+    this.bridgeAvailable = false;
+    this.liveConfirmed = false;
     this.status = 'disconnected';
     this.notifyStatus();
   }
@@ -191,6 +271,8 @@ export class BridgeTikTokConnector implements ITikTokConnector {
       lastActivityAt: Date.now(),
       errorMessage: this.lastErrorMessage,
       reconnectAttempts: reconnState.attempts,
+      bridgeAvailable: this.bridgeAvailable,
+      liveConfirmed: this.liveConfirmed,
     };
     this.statusListeners.forEach((cb) => {
       try { cb(statusPayload); } catch {}

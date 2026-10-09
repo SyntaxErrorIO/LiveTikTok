@@ -1,0 +1,24 @@
+[
+  {
+    "id": "rule-stale-restart-1791517762642",
+    "name": "Regla con Contador Antiguo",
+    "description": "Prueba de recuperación de reinicio",
+    "enabled": true,
+    "triggerType": "share",
+    "conditions": {},
+    "actions": [
+      {
+        "id": "act-s1",
+        "type": "overlay_effect",
+        "effectId": "eff-sparkles",
+        "enabled": true
+      }
+    ],
+    "priority": "high",
+    "cooldownSeconds": 5,
+    "maxPerHour": 10,
+    "createdAt": 1791506962642,
+    "lastTriggeredAt": 1791517762643,
+    "executionsCount": 1
+  }
+]

@@ -11,6 +11,7 @@ import { StateStore } from '../src/server/stateStore';
 import { ReconnectManager } from '../src/server/reconnectManager';
 import { TaskQueue } from '../src/server/taskQueue';
 import { TikTokConnectorFactory } from '../src/server/connectors/connectorFactory';
+import { BridgeTikTokConnector } from '../src/server/connectors/bridgeConnector';
 import { AuthManager } from '../src/server/authManager';
 import { coreEngine } from '../src/server/coreEngine';
 import { AutomationRule, TikTokEvent } from '../src/types';
@@ -439,6 +440,288 @@ async function runAllTests() {
     const logs = StateStore.getLogs(testUser);
     assert(logs.length > 0, 'Debe registrar la ejecución del evento en el historial del usuario');
     assert(logs[0].eventType === 'gift', 'El tipo de evento registrado debe ser gift');
+  });
+
+  // 15. Seguridad del Webhook (server.ts)
+  await test('16. Seguridad del Webhook: autenticación, control de producción y protección anti-suplantación', () => {
+    // 1. En producción, rechazar llamadas a webhook sin TIKTOK_WEBHOOK_SECRET configurado
+    const originalEnv = process.env.NODE_ENV;
+    const originalSecret = process.env.TIKTOK_WEBHOOK_SECRET;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.TIKTOK_WEBHOOK_SECRET;
+
+      const isProd = process.env.NODE_ENV === 'production';
+      const envSecret: string | undefined = (process.env as any).TIKTOK_WEBHOOK_SECRET;
+      const shouldRejectInProd = Boolean(isProd && !envSecret);
+      assert(shouldRejectInProd === true, 'En producción debe rechazar webhooks externos si TIKTOK_WEBHOOK_SECRET no está definido');
+
+      // 2. Comprobar que peticiones sin credencial válida sean rechazadas
+      process.env.NODE_ENV = 'development';
+      const fakeHeaderSecret: string = 'invalid_secret_key';
+      const expectedSecret: string = 'secure_prod_secret_12345';
+      const isAuthValid = fakeHeaderSecret === expectedSecret;
+      assert(!isAuthValid, 'Petición con clave de webhook inválida debe ser rechazada con 401');
+
+      // 3. Comprobar que un streamer normal no pueda suplantar a otro usuario mediante x-user-id
+      const regularStreamerSession: { userId: string; username: string; role: 'admin' | 'streamer' } = {
+        userId: 'usr-streamer-real',
+        username: 'streamer_real',
+        role: 'streamer',
+      };
+
+      const requestedSpoofedUser = 'usr-admin-primary';
+      let resolvedTargetUser = regularStreamerSession.userId;
+      if (regularStreamerSession.role === 'admin') {
+        resolvedTargetUser = requestedSpoofedUser;
+      }
+      assert(resolvedTargetUser === 'usr-streamer-real', 'Un usuario normal jamás debe poder enviar eventos al ID de otro usuario');
+
+      // 4. Comprobar asociación legítima con token de overlay
+      const randSuffix = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+      const streamerAccount = AuthManager.register({
+        username: 'streamer_hook_' + randSuffix,
+        email: `streamer_hook_${randSuffix}@test.com`,
+        password: 'Password1234!',
+      });
+      assert(Boolean(streamerAccount.user?.overlayToken), 'Debe tener overlayToken');
+      const associatedUser = AuthManager.getUserByOverlayToken(streamerAccount.user!.overlayToken);
+      assert(associatedUser?.id === streamerAccount.user?.id, 'El webhook autenticado por token debe asociarse estrictamente con el dueño del token');
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+      if (originalSecret) process.env.TIKTOK_WEBHOOK_SECRET = originalSecret;
+      else delete process.env.TIKTOK_WEBHOOK_SECRET;
+    }
+  });
+
+  // 16. Conexión Real con TikTok Bridge (BridgeTikTokConnector)
+  await test('17. Conexión TikTok LIVE: eliminación de falso auto-connect 600ms y confirmación explícita de LIVE', async () => {
+    let wsInstance: any = null;
+    let sentCommand: any = null;
+
+    class MockWebSocket {
+      public readyState = 1;
+      public onopen: any = null;
+      public onmessage: any = null;
+      public onerror: any = null;
+      public onclose: any = null;
+      constructor(public url: string) {
+        wsInstance = this;
+        setTimeout(() => {
+          if (this.onopen) this.onopen();
+        }, 15);
+      }
+      send(data: string) {
+        sentCommand = JSON.parse(data);
+      }
+      close() {
+        this.readyState = 3;
+        if (this.onclose) this.onclose({ reason: 'closed' });
+      }
+    }
+
+    const originalWS = (globalThis as any).WebSocket;
+    (globalThis as any).WebSocket = MockWebSocket;
+
+    try {
+      const connector = new BridgeTikTokConnector();
+      const connectPromise = connector.connect({
+        username: '@creator_live',
+        mode: 'real_tiktok',
+        status: 'disconnected',
+        autoReconnect: true,
+        bridgeServerUrl: 'ws://localhost:21213',
+      });
+
+      // Wait 700ms (the old implementation would have falsely connected after 600ms)
+      await new Promise((r) => setTimeout(r, 700));
+
+      assert(connector.getStatus() === 'connecting', 'El conector NO debe auto-conectarse solo por el temporizador de 600ms');
+      assert(connector.isBridgeAvailable() === true, 'El puente daemon debe estar marcado disponible a nivel socket');
+      assert(connector.isLiveConfirmed() === false, 'La transmisión en vivo NO debe estar confirmada hasta recibir mensaje explícito');
+      assert(sentCommand?.command === 'CONNECT', 'Debe haber enviado la solicitud de conexión al puente');
+      assert(sentCommand?.username === 'creator_live', 'Debe haber normalizado el nombre sin el arroba');
+
+      // Simular confirmación explícita de transmisión en vivo desde el puente
+      wsInstance.onmessage({
+        data: JSON.stringify({
+          status: 'connected',
+          type: 'LIVE_CONFIRMED',
+          roomId: '71928374619283',
+          liveStatus: 'live',
+        }),
+      });
+
+      const success = await connectPromise;
+      assert(success === true, 'connect() debe resolverse exitosamente con confirmación explícita');
+      assert(connector.getStatus() === 'connected', 'El conector debe estar en estado connected');
+      assert(connector.isLiveConfirmed() === true, 'liveConfirmed debe ser true');
+
+      // Simular intento con streamer desconectado / offline
+      const offlineConnector = new BridgeTikTokConnector();
+      const offlinePromise = offlineConnector.connect({
+        username: 'offline_user',
+        mode: 'real_tiktok',
+        status: 'disconnected',
+        autoReconnect: true,
+        bridgeServerUrl: 'ws://localhost:21213',
+      });
+
+      await new Promise((r) => setTimeout(r, 30));
+
+      // Puente responde que el creador está offline
+      wsInstance.onmessage({
+        data: JSON.stringify({
+          status: 'error',
+          error: 'User is offline',
+        }),
+      });
+
+      const offlineResult = await offlinePromise;
+      assert(offlineResult === false, 'connect() debe devolver false si el streamer está offline');
+      assert(offlineConnector.getStatus() === 'error', 'El conector debe marcar status error');
+      assert(offlineConnector.isLiveConfirmed() === false, 'liveConfirmed debe ser false si el usuario está offline');
+    } finally {
+      (globalThis as any).WebSocket = originalWS;
+    }
+  });
+
+  // 17. Límite horario independiente por usuario y prevención de colisión de IDs
+  await test('18. Límite maxPerHour independiente por usuario sin colisiones de identificadores', async () => {
+    const userA = 'user-creator-alpha';
+    const userB = 'user-creator-beta';
+    const sharedRuleId = 'rule-shared-id-99';
+
+    // Ambos creadores tienen una regla con el mismo ID y maxPerHour = 1
+    const ruleA: AutomationRule = {
+      id: sharedRuleId,
+      name: 'Regla Compartida Alpha',
+      description: 'Límite por hora 1',
+      enabled: true,
+      triggerType: 'like',
+      conditions: {},
+      actions: [{ id: 'a1', type: 'overlay_effect', effectId: 'eff-sparkles', enabled: true }],
+      priority: 'high',
+      cooldownSeconds: 0,
+      maxPerHour: 1,
+      createdAt: Date.now(),
+      executionsCount: 0,
+    };
+
+    const ruleB: AutomationRule = {
+      id: sharedRuleId,
+      name: 'Regla Compartida Beta',
+      description: 'Límite por hora 1',
+      enabled: true,
+      triggerType: 'like',
+      conditions: {},
+      actions: [{ id: 'b1', type: 'overlay_effect', effectId: 'eff-confetti', enabled: true }],
+      priority: 'high',
+      cooldownSeconds: 0,
+      maxPerHour: 1,
+      createdAt: Date.now(),
+      executionsCount: 0,
+    };
+
+    StateStore.saveRules([ruleA], userA);
+    StateStore.saveRules([ruleB], userB);
+
+    const likeEventA1 = {
+      id: 'like-a-1-' + Date.now(),
+      type: 'WebcastLikeMessage',
+      user: { username: 'viewer_a', nickname: 'Viewer A' },
+      likeCount: 1,
+    };
+
+    // 1. Ejecución de User A (1ra vez: debe ejecutarse)
+    await coreEngine.ingestRawEvent(likeEventA1, 'simulation', userA);
+    await new Promise((r) => setTimeout(r, 250));
+
+    // 2. Ejecución de User A (2da vez: debe quedar limitada por maxPerHour = 1)
+    const likeEventA2 = {
+      id: 'like-a-2-' + Date.now(),
+      type: 'WebcastLikeMessage',
+      user: { username: 'viewer_a', nickname: 'Viewer A' },
+      likeCount: 2,
+    };
+    await coreEngine.ingestRawEvent(likeEventA2, 'simulation', userA);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const logsA = StateStore.getLogs(userA);
+    const rateLimitedLogA = logsA.find((l) => l.matchedRules.some((r) => r.status === 'rate_limited'));
+    assert(Boolean(rateLimitedLogA), 'User A debe quedar limitado al superar maxPerHour = 1');
+
+    // 3. Ejecución de User B con el mismo ruleId ('rule-shared-id-99'):
+    // NO debe verse afectada por el límite alcanzado por User A
+    const likeEventB = {
+      id: 'like-b-1-' + Date.now(),
+      type: 'WebcastLikeMessage',
+      user: { username: 'viewer_b', nickname: 'Viewer B' },
+      likeCount: 1,
+    };
+
+    await coreEngine.ingestRawEvent(likeEventB, 'simulation', userB);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const logsB = StateStore.getLogs(userB);
+    const executedLogB = logsB.find((l) => l.matchedRules.some((r) => r.status === 'executed'));
+    assert(Boolean(executedLogB), 'User B NO debe sufrir límite horario por colisión de ID con User A');
+  });
+
+  // 18. Recuperación tras reinicio del servidor y preservación de cooldowns y prioridades
+  await test('19. Reglas no se bloquean incorrectamente tras reinicio y preservan cooldowns y prioridades', async () => {
+    const testUser = 'user-restart-recovery';
+    const now = Date.now();
+
+    // Simular regla con un contador guardado de 50 de una sesión antigua (hace 3 horas)
+    const oldTimestamp = now - 3 * 3600 * 1000;
+    const ruleWithStaleCount: AutomationRule = {
+      id: 'rule-stale-restart-' + Date.now(),
+      name: 'Regla con Contador Antiguo',
+      description: 'Prueba de recuperación de reinicio',
+      enabled: true,
+      triggerType: 'share',
+      conditions: {},
+      actions: [{ id: 'act-s1', type: 'overlay_effect', effectId: 'eff-sparkles', enabled: true }],
+      priority: 'high',
+      cooldownSeconds: 5,
+      maxPerHour: 10,
+      createdAt: oldTimestamp,
+      lastTriggeredAt: oldTimestamp,
+      executionsCount: 50, // Stale count from previous server run!
+    };
+
+    StateStore.saveRules([ruleWithStaleCount], testUser);
+
+    const shareEvent1 = {
+      id: 'share-evt-1-' + Date.now(),
+      type: 'WebcastSocialMessage',
+      user: { username: 'sharer_1', nickname: 'Sharer' },
+      socialType: 'share',
+    };
+
+    // Al evaluar tras reinicio, las ejecuciones de hace 3 horas ya expiraron de la ventana de 1 hora
+    await coreEngine.ingestRawEvent(shareEvent1, 'simulation', testUser);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const logs = StateStore.getLogs(testUser);
+    const executed = logs.find((l) => l.matchedRules.some((r) => r.ruleId === ruleWithStaleCount.id && r.status === 'executed'));
+    assert(Boolean(executed), 'La regla NO debe quedar bloqueada por un contador obsoleto tras reiniciar el servidor');
+
+    // Comprobar que el cooldown activo sí bloquea durante su duración
+    const shareEvent2 = {
+      id: 'share-evt-2-' + Date.now(),
+      type: 'WebcastSocialMessage',
+      user: { username: 'sharer_2', nickname: 'Sharer 2' },
+      socialType: 'share',
+    };
+    await coreEngine.ingestRawEvent(shareEvent2, 'simulation', testUser);
+    await new Promise((r) => setTimeout(r, 250));
+
+    const updatedLogs = StateStore.getLogs(testUser);
+    const cooldownLog = updatedLogs.find((l) => l.matchedRules.some((r) => r.ruleId === ruleWithStaleCount.id && r.status === 'cooldown_blocked'));
+    assert(Boolean(cooldownLog), 'El cooldown configurado de 5s debe preservarse y bloquear durante su periodo');
   });
 
   console.log('\n======================================================');

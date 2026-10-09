@@ -1,18 +1,23 @@
 [
   {
-    "id": "rule-beta-1",
-    "name": "Regla del Creador Beta",
-    "description": "Exclusiva de Beta",
+    "id": "rule-shared-id-99",
+    "name": "Regla Compartida Beta",
+    "description": "Límite por hora 1",
     "enabled": true,
-    "triggerType": "comment",
-    "conditions": {
-      "commentKeyword": "!fiesta"
-    },
-    "actions": [],
-    "priority": "medium",
-    "cooldownSeconds": 5,
-    "maxPerHour": 20,
-    "createdAt": 1791515990274,
-    "executionsCount": 0
+    "triggerType": "like",
+    "conditions": {},
+    "actions": [
+      {
+        "id": "b1",
+        "type": "overlay_effect",
+        "effectId": "eff-confetti",
+        "enabled": true
+      }
+    ],
+    "priority": "high",
+    "cooldownSeconds": 0,
+    "maxPerHour": 1,
+    "createdAt": 1791517761885,
+    "executionsCount": 1
   }
 ]

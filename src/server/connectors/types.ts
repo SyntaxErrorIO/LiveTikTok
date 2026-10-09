@@ -12,6 +12,8 @@ export interface ConnectorStatusEvent {
   lastActivityAt?: number;
   errorMessage?: string;
   reconnectAttempts?: number;
+  bridgeAvailable?: boolean;
+  liveConfirmed?: boolean;
 }
 
 export interface ITikTokConnector {

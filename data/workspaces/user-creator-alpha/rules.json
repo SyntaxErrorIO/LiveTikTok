@@ -1,18 +1,23 @@
 [
   {
-    "id": "rule-alpha-1",
-    "name": "Regla del Creador Alpha",
-    "description": "Exclusiva de Alpha",
+    "id": "rule-shared-id-99",
+    "name": "Regla Compartida Alpha",
+    "description": "Límite por hora 1",
     "enabled": true,
-    "triggerType": "gift",
-    "conditions": {
-      "giftName": "Rosa"
-    },
-    "actions": [],
+    "triggerType": "like",
+    "conditions": {},
+    "actions": [
+      {
+        "id": "a1",
+        "type": "overlay_effect",
+        "effectId": "eff-sparkles",
+        "enabled": true
+      }
+    ],
     "priority": "high",
-    "cooldownSeconds": 2,
-    "maxPerHour": 50,
-    "createdAt": 1791515990274,
-    "executionsCount": 0
+    "cooldownSeconds": 0,
+    "maxPerHour": 1,
+    "createdAt": 1791517761885,
+    "executionsCount": 1
   }
 ]

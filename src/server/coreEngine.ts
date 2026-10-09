@@ -47,8 +47,40 @@ export class CoreAutomationEngine {
   private activeConnector: ITikTokConnector | null = null;
   private startedAt: number = Date.now();
 
-  // Sliding window execution timestamps per rule: ruleId -> timestamp[]
+  // Sliding window execution timestamps per isolated user & rule: `${userId}:${ruleId}` -> timestamp[]
   private ruleExecutionTimestamps: Map<string, number[]> = new Map();
+  private seededUsers: Set<string> = new Set();
+
+  // Multi-user isolation helper to prevent rule key collisions across different creators
+  private getRuleRateKey(userId: string | undefined, ruleId: string): string {
+    const safeUser = userId || 'default';
+    return `${safeUser}:${ruleId}`;
+  }
+
+  // Hydrate active timestamps from persistent logs on restart to prevent false rule lockups
+  private ensureUserTimestampsLoaded(userId?: string) {
+    const safeUser = userId || 'default';
+    if (this.seededUsers.has(safeUser)) return;
+    this.seededUsers.add(safeUser);
+
+    try {
+      const logs = StateStore.getLogs(userId);
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      for (const log of logs) {
+        const ts = log.eventTimestamp || (log as any).timestamp || 0;
+        if (ts > oneHourAgo && log.matchedRules) {
+          for (const mr of log.matchedRules) {
+            if (mr.status === 'executed' && mr.ruleId) {
+              const key = this.getRuleRateKey(userId, mr.ruleId);
+              const list = this.ruleExecutionTimestamps.get(key) || [];
+              list.push(ts);
+              this.ruleExecutionTimestamps.set(key, list);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
 
   // Engine telemetry
   private totalReceived: number = 0;
@@ -239,10 +271,15 @@ export class CoreAutomationEngine {
         continue;
       }
 
-      // Check hourly rate limit with rolling 1-hour window
+      // Check hourly rate limit with rolling 1-hour window (isolated per user and rule ID)
+      this.ensureUserTimestampsLoaded(targetUserId);
+      const rateKey = this.getRuleRateKey(targetUserId, rule.id);
       const oneHourAgo = now - 60 * 60 * 1000;
-      const history = (this.ruleExecutionTimestamps.get(rule.id) || []).filter((t) => t > oneHourAgo);
-      this.ruleExecutionTimestamps.set(rule.id, history);
+      const history = (this.ruleExecutionTimestamps.get(rateKey) || []).filter((t) => t > oneHourAgo);
+      this.ruleExecutionTimestamps.set(rateKey, history);
+
+      // Synchronize executionsCount so stale numbers from restarts or past days do not lock rules
+      rule.executionsCount = history.length;
 
       if (rule.maxPerHour && history.length >= rule.maxPerHour) {
         evaluatedDetails.push({
@@ -282,7 +319,7 @@ export class CoreAutomationEngine {
       if (executedActionsCount > 0) {
         // Register execution timestamp in rolling 1-hour window
         history.push(now);
-        this.ruleExecutionTimestamps.set(rule.id, history);
+        this.ruleExecutionTimestamps.set(rateKey, history);
         rule.executionsCount = history.length;
         rule.lastTriggeredAt = now;
         anyExecuted = true;
@@ -319,7 +356,7 @@ export class CoreAutomationEngine {
   }
 
   private checkConditions(event: TikTokEvent, rule: AutomationRule): { passed: boolean; reason: string } {
-    const c = rule.conditions;
+    const c = rule.conditions || ({} as any);
 
     if (event.type === 'gift') {
       const diamonds = event.data.diamondCount || 0;

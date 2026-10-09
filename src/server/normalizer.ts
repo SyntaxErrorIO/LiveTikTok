@@ -98,7 +98,7 @@ export class EventNormalizer {
     if (rawType.includes('chat') || rawType.includes('comment') || raw.comment || raw.message) return 'comment';
     if (rawType.includes('like') || raw.likeCount) return 'like';
     if (rawType.includes('follow') || rawType.includes('subscribe') || rawType.includes('sub')) return 'follow';
-    if (rawType.includes('share')) return 'share';
+    if (rawType.includes('share') || raw.socialType === 'share' || rawType.includes('social')) return 'share';
 
     return null;
   }

@@ -313,24 +313,106 @@ app.post('/api/backup/restore/:fileName', requireAuth, (req: Request, res: Respo
 // INGESTION: EXTERNAL WEBHOOK & SIMULATOR
 // -------------------------------------------------------------
 app.post('/api/events/webhook', webhookLimiter, async (req: Request, res: Response) => {
-  // Optional security token check if configured in environment
-  const expectedSecret = process.env.TIKTOK_WEBHOOK_SECRET;
-  if (expectedSecret) {
-    const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'];
-    if (authHeader !== expectedSecret) {
-      FailSafeManager.activate('Fallo de autenticación en webhook externo', 'webhook_auth_failed');
-      SystemLogger.warn('SECURITY', 'Rechazada llamada a webhook con clave inválida', {
-        ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress,
-      });
-      return res.status(401).json({ success: false, error: 'Token de webhook inválido.' });
+  const isProd = process.env.NODE_ENV === 'production';
+  const expectedSecret = process.env.TIKTOK_WEBHOOK_SECRET?.trim();
+
+  // 1. En producción, rechazar si TIKTOK_WEBHOOK_SECRET no está configurado
+  if (isProd && !expectedSecret) {
+    SystemLogger.error('SECURITY', 'Rechazada llamada a webhook: TIKTOK_WEBHOOK_SECRET no configurado en producción.');
+    return res.status(503).json({
+      success: false,
+      error: 'Servicio de webhook no disponible: TIKTOK_WEBHOOK_SECRET es obligatorio en producción.',
+    });
+  }
+
+  // 2. Autenticación rigurosa de la petición entrante
+  const headerSecret = (req.headers['x-webhook-secret'] as string)?.trim();
+  const authHeader = (req.headers['authorization'] as string)?.trim() || '';
+  let bearerToken = '';
+  if (authHeader.startsWith('Bearer ')) {
+    bearerToken = authHeader.substring(7).trim();
+  } else if (authHeader) {
+    bearerToken = authHeader;
+  }
+
+  const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+  const headerToken =
+    (req.headers['x-webhook-token'] as string)?.trim() ||
+    (req.headers['x-overlay-token'] as string)?.trim();
+
+  let authType: 'global_secret' | 'user_session' | 'user_token' | null = null;
+  let authenticatedUserId: string | null = null;
+
+  // Comprobar coincidencia con secret global si está configurado
+  if (
+    expectedSecret &&
+    (headerSecret === expectedSecret || bearerToken === expectedSecret || queryToken === expectedSecret)
+  ) {
+    authType = 'global_secret';
+  } else if ((req as any).user) {
+    // Sesión de usuario válida extraída por middleware JWT
+    authType = 'user_session';
+    authenticatedUserId = (req as any).user.userId;
+  } else {
+    // Comprobar token específico de usuario (token JWT o token de integración/overlay)
+    const tokenCandidate = headerToken || bearerToken || queryToken;
+    if (tokenCandidate) {
+      const userFromOverlay = AuthManager.getUserByOverlayToken(tokenCandidate);
+      if (userFromOverlay) {
+        authType = 'user_token';
+        authenticatedUserId = userFromOverlay.id;
+      } else {
+        const sessionFromJwt = AuthManager.verifyToken(tokenCandidate);
+        if (sessionFromJwt) {
+          authType = 'user_token';
+          authenticatedUserId = sessionFromJwt.userId;
+        }
+      }
     }
   }
 
-  const targetUserId =
-    (req.headers['x-user-id'] as string) ||
-    (req.query.userId as string) ||
-    (req as any).user?.userId ||
-    'usr-admin-primary';
+  // Si no se proporcionó ninguna credencial válida, rechazar
+  if (!authType) {
+    FailSafeManager.activate('Fallo de autenticación en webhook externo', 'webhook_auth_failed');
+    SystemLogger.warn('SECURITY', 'Rechazada llamada a webhook sin autenticación válida', {
+      ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress,
+    });
+    return res.status(401).json({ success: false, error: 'Autenticación de webhook inválida o ausente.' });
+  }
+
+  // 3. Asociación estricta con usuario autorizado (Prevenir suplantación arbitraria)
+  let targetUserId: string;
+
+  if (authType === 'user_session') {
+    const session = (req as any).user;
+    const requestedTarget = (req.headers['x-user-id'] as string) || (req.query.userId as string);
+    // Solo un administrador autenticado puede asociar eventos a otro usuario
+    if (requestedTarget && session.role === 'admin') {
+      const targetUser = AuthManager.getUserById(requestedTarget);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, error: 'Usuario destino especificado no existe.' });
+      }
+      targetUserId = targetUser.id;
+    } else {
+      // Streamers regulares solo reciben en su propia cuenta
+      targetUserId = session.userId;
+    }
+  } else if (authType === 'user_token') {
+    // Token de usuario vincula exclusivamente al usuario titular
+    targetUserId = authenticatedUserId!;
+  } else {
+    // authType === 'global_secret' (Integración autorizada de servidor a servidor)
+    const requestedTarget = (req.headers['x-user-id'] as string) || (req.query.userId as string);
+    if (requestedTarget) {
+      const targetUser = AuthManager.getUserById(requestedTarget);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, error: 'Usuario destino no registrado en el sistema.' });
+      }
+      targetUserId = targetUser.id;
+    } else {
+      targetUserId = process.env.TIKTOK_WEBHOOK_DEFAULT_USER || 'usr-admin-primary';
+    }
+  }
 
   const result = await coreEngine.ingestRawEvent(req.body, 'real_tiktok', targetUserId);
   return res.status(result.accepted ? 200 : 400).json(result);

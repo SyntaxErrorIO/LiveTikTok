@@ -1,0 +1,78 @@
+[
+  {
+    "id": "log-mv0ff4un-qnrk1h1",
+    "eventId": "share-evt-2-1791517762895",
+    "eventTimestamp": 1791517762895,
+    "source": "simulation",
+    "eventType": "share",
+    "eventSummary": "Transmisión compartida",
+    "senderName": "Sharer 2",
+    "matchedRules": [
+      {
+        "ruleId": "rule-stale-restart-1791517762642",
+        "ruleName": "Regla con Contador Antiguo",
+        "executedActionsCount": 0,
+        "status": "cooldown_blocked"
+      }
+    ],
+    "overallStatus": "cooldown",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0ff4nn-ta093ss",
+    "eventId": "share-evt-1-1791517762642",
+    "eventTimestamp": 1791517762642,
+    "source": "simulation",
+    "eventType": "share",
+    "eventSummary": "Transmisión compartida",
+    "senderName": "Sharer",
+    "matchedRules": [
+      {
+        "ruleId": "rule-stale-restart-1791517762642",
+        "ruleName": "Regla con Contador Antiguo",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0f5hd6-lsr7q9j",
+    "eventId": "share-evt-2-1791517312553",
+    "eventTimestamp": 1791517312553,
+    "source": "simulation",
+    "eventType": "share",
+    "eventSummary": "Transmisión compartida",
+    "senderName": "Sharer 2",
+    "matchedRules": [
+      {
+        "ruleId": "rule-stale-restart-1791517312299",
+        "ruleName": "Regla con Contador Antiguo",
+        "executedActionsCount": 0,
+        "status": "cooldown_blocked"
+      }
+    ],
+    "overallStatus": "cooldown",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0f5h65-umjh5nn",
+    "eventId": "share-evt-1-1791517312300",
+    "eventTimestamp": 1791517312300,
+    "source": "simulation",
+    "eventType": "share",
+    "eventSummary": "Transmisión compartida",
+    "senderName": "Sharer",
+    "matchedRules": [
+      {
+        "ruleId": "rule-stale-restart-1791517312299",
+        "ruleName": "Regla con Contador Antiguo",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 1
+  }
+]

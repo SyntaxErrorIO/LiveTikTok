@@ -118,8 +118,11 @@ export class RuleEngine {
         continue;
       }
 
-      // 4. Rate limit check (maxPerHour)
-      if (rule.maxPerHour && rule.executionsCount >= rule.maxPerHour) {
+      // 4. Rate limit check (maxPerHour) with 1-hour window reset
+      if (rule.lastTriggeredAt && now - rule.lastTriggeredAt >= 3600000) {
+        rule.executionsCount = 0;
+      }
+      if (rule.maxPerHour && (rule.executionsCount || 0) >= rule.maxPerHour) {
         evaluationDetails.push({
           rule,
           status: 'rate_limited',

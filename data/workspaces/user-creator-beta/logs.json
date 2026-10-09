@@ -1,0 +1,59 @@
+[
+  {
+    "id": "log-mv0ff4gm-y64b15j",
+    "eventId": "like-b-1-1791517762389",
+    "eventTimestamp": 1791517762389,
+    "source": "simulation",
+    "eventType": "like",
+    "eventSummary": "+1 Likes",
+    "senderName": "Viewer B",
+    "matchedRules": [
+      {
+        "ruleId": "rule-shared-id-99",
+        "ruleName": "Regla Compartida Beta",
+        "executedActionsCount": 0,
+        "status": "rate_limited"
+      }
+    ],
+    "overallStatus": "no_match",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0f5gz3-ehq1v0l",
+    "eventId": "like-b-1-1791517312046",
+    "eventTimestamp": 1791517312046,
+    "source": "simulation",
+    "eventType": "like",
+    "eventSummary": "+1 Likes",
+    "senderName": "Viewer B",
+    "matchedRules": [
+      {
+        "ruleId": "rule-shared-id-99",
+        "ruleName": "Regla Compartida Beta",
+        "executedActionsCount": 0,
+        "status": "rate_limited"
+      }
+    ],
+    "overallStatus": "no_match",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0f4hjw-bdpmc0j",
+    "eventId": "like-b-1-1791517266138",
+    "eventTimestamp": 1791517266138,
+    "source": "simulation",
+    "eventType": "like",
+    "eventSummary": "+1 Likes",
+    "senderName": "Viewer B",
+    "matchedRules": [
+      {
+        "ruleId": "rule-shared-id-99",
+        "ruleName": "Regla Compartida Beta",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 1
+  }
+]

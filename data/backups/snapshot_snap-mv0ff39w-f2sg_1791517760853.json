@@ -1,0 +1,188 @@
+{
+  "id": "snap-mv0ff39w-f2sg",
+  "timestamp": 1791517760852,
+  "version": "1.2.0",
+  "userId": "user-creator-alpha",
+  "reason": "Snapshot Alpha",
+  "data": {
+    "rules": [
+      {
+        "id": "rule-alpha-1",
+        "name": "Regla del Creador Alpha",
+        "description": "Exclusiva de Alpha",
+        "enabled": true,
+        "triggerType": "gift",
+        "conditions": {
+          "giftName": "Rosa"
+        },
+        "actions": [],
+        "priority": "high",
+        "cooldownSeconds": 2,
+        "maxPerHour": 50,
+        "createdAt": 1791517760851,
+        "executionsCount": 0
+      }
+    ],
+    "effects": [
+      {
+        "id": "eff-confetti-burst",
+        "name": "Lluvia de Confeti & Neón",
+        "animationType": "confetti_burst",
+        "titleTemplate": "¡REGALO DE {user}!",
+        "subtitleTemplate": "Ha enviado {amount}x {gift} (+{diamonds} 💎)",
+        "primaryColor": "#3b82f6",
+        "secondaryColor": "#8b5cf6",
+        "durationMs": 4000,
+        "soundId": "chime",
+        "soundVolume": 85,
+        "enableTTS": false,
+        "ttsTemplate": "¡Muchas gracias a {user} por el regalo {gift}!",
+        "position": "top",
+        "badgeIcon": "Sparkles"
+      },
+      {
+        "id": "eff-cyber-strike",
+        "name": "Cyber Strike Holograma",
+        "animationType": "cyber_strike",
+        "titleTemplate": "⚡ ALERTA CYBER STRIKE ⚡",
+        "subtitleTemplate": "{user} desató {amount}x {gift} ({diamonds} Diamantes)",
+        "primaryColor": "#06b6d4",
+        "secondaryColor": "#3b82f6",
+        "durationMs": 5000,
+        "soundId": "laser",
+        "soundVolume": 90,
+        "enableTTS": true,
+        "ttsTemplate": "Atención al directo: {user} acaba de detonar una {gift}",
+        "position": "center",
+        "badgeIcon": "Zap"
+      },
+      {
+        "id": "eff-jackpot-gold",
+        "name": "Jackpot Golden Legend",
+        "animationType": "jackpot_gold",
+        "titleTemplate": "👑 DONACIÓN LEGENDARIA 👑",
+        "subtitleTemplate": "¡{user} ha donado un {gift} épico de {diamonds} diamantes!",
+        "primaryColor": "#eab308",
+        "secondaryColor": "#f59e0b",
+        "durationMs": 7000,
+        "soundId": "fanfare",
+        "soundVolume": 95,
+        "enableTTS": true,
+        "ttsTemplate": "¡Increíble! {user} rompió el récord con un regalo {gift}. ¡Todos dejen su follow!",
+        "position": "center",
+        "badgeIcon": "Crown"
+      },
+      {
+        "id": "eff-neon-pulse",
+        "name": "Pulso Neón Galaxia",
+        "animationType": "neon_pulse",
+        "titleTemplate": "🌌 IMPACTO CÓSMICO: {user}",
+        "subtitleTemplate": "{gift} enviado en racha ({amount}x)",
+        "primaryColor": "#8b5cf6",
+        "secondaryColor": "#ec4899",
+        "durationMs": 4500,
+        "soundId": "powerup",
+        "soundVolume": 80,
+        "enableTTS": false,
+        "ttsTemplate": "{user} envió {amount} {gift}",
+        "position": "top",
+        "badgeIcon": "Flame"
+      },
+      {
+        "id": "eff-rose-shower",
+        "name": "Lluvia de Rosas Stream",
+        "animationType": "rose_shower",
+        "titleTemplate": "🌹 RACHA DE ROSAS",
+        "subtitleTemplate": "{user} aportó {amount} Rosas al directo",
+        "primaryColor": "#f43f5e",
+        "secondaryColor": "#fb7185",
+        "durationMs": 3500,
+        "soundId": "coin",
+        "soundVolume": 75,
+        "enableTTS": false,
+        "ttsTemplate": "Gracias {user} por las rosas",
+        "position": "bottom",
+        "badgeIcon": "Heart"
+      }
+    ],
+    "settings": {
+      "masterAutomationEnabled": true,
+      "masterVolume": 80,
+      "enableAudioSynthesizer": true,
+      "obsWebSocket": {
+        "enabled": false,
+        "url": "ws://127.0.0.1:4455",
+        "password": "",
+        "connected": false
+      },
+      "globalRateLimitPerMinute": 60,
+      "defaultOverlayDurationMs": 4500,
+      "historyRetentionCount": 300
+    },
+    "connection": {
+      "mode": "simulation",
+      "status": "connected",
+      "username": "streamer_live_pro",
+      "roomId": "7412984920491029381",
+      "bridgeServerUrl": "ws://localhost:21213",
+      "autoReconnect": true,
+      "connectedAt": 1791512389946,
+      "lastActivityAt": 1791517311794,
+      "viewerCount": 1420,
+      "likeTotal": 28450,
+      "pingMs": 18
+    },
+    "counters": [
+      {
+        "id": "cnt-roses-goal",
+        "name": "Meta de Rosas del Directo",
+        "current": 42,
+        "target": 100,
+        "unit": "Rosas",
+        "lastUpdated": 1791515989946
+      },
+      {
+        "id": "cnt-diamonds-session",
+        "name": "Diamantes Acumulados",
+        "current": 2450,
+        "target": 10000,
+        "unit": "Diamantes",
+        "lastUpdated": 1791515989946
+      },
+      {
+        "id": "cnt-likes-rush",
+        "name": "Ráfaga de Likes Comunitarios",
+        "current": 15400,
+        "target": 50000,
+        "unit": "Taps",
+        "lastUpdated": 1791515989946
+      }
+    ],
+    "leaderboard": [
+      {
+        "userId": "usr-carlos_pro",
+        "username": "carlos_pro",
+        "nickname": "Carlos El León",
+        "points": 2500,
+        "giftsCount": 14,
+        "lastUpdated": 1791512389946
+      },
+      {
+        "userId": "usr-mariana_stream",
+        "username": "mariana_stream",
+        "nickname": "Mariana VIP",
+        "points": 1200,
+        "giftsCount": 8,
+        "lastUpdated": 1791508789946
+      },
+      {
+        "userId": "usr-david_gamer",
+        "username": "david_gamer",
+        "nickname": "David 🎮",
+        "points": 600,
+        "giftsCount": 22,
+        "lastUpdated": 1791505189946
+      }
+    ]
+  }
+}
