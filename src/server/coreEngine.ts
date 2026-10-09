@@ -44,7 +44,8 @@ export class CoreAutomationEngine {
   private deduplicator: EventDeduplicator;
   private taskQueue: TaskQueue;
   private sseClients: Map<string, SSEClientSubscriber> = new Map();
-  private activeConnector: ITikTokConnector | null = null;
+  // Multi-user connector isolation: active connector per user workspace
+  private activeConnectors: Map<string, ITikTokConnector> = new Map();
   private startedAt: number = Date.now();
 
   // Sliding window execution timestamps per isolated user & rule: `${userId}:${ruleId}` -> timestamp[]
@@ -746,26 +747,30 @@ export class CoreAutomationEngine {
     }
   }
 
-  // Connection management via decoupled ITikTokConnector
+  // Connection management via decoupled ITikTokConnector (multi-user isolated)
   public async connect(userId?: string): Promise<boolean> {
+    const targetUserId = userId || 'default';
     const conn = StateStore.getConnection(userId);
 
-    // If existing connector has different mode, tear down cleanly
-    if (this.activeConnector && this.activeConnector.mode !== conn.mode) {
-      this.activeConnector.disconnect();
-      this.activeConnector = null;
+    // If existing connector has different mode or connectorType, tear down cleanly
+    const existing = this.activeConnectors.get(targetUserId);
+    if (existing && (existing.mode !== conn.mode || (conn.connectorType && existing.connectorType !== conn.connectorType))) {
+      existing.disconnect();
+      this.activeConnectors.delete(targetUserId);
     }
 
-    if (!this.activeConnector) {
-      this.activeConnector = TikTokConnectorFactory.createConnector(conn.mode);
+    let connector = this.activeConnectors.get(targetUserId);
+    if (!connector) {
+      connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
+      this.activeConnectors.set(targetUserId, connector);
 
       // Listen to raw events from connector and ingest them into automation engine for this user
-      this.activeConnector.onEvent((rawEvent) => {
-        this.ingestRawEvent(rawEvent, this.activeConnector?.mode || 'simulation', userId);
+      connector.onEvent((rawEvent) => {
+        this.ingestRawEvent(rawEvent, connector?.mode || 'simulation', userId);
       });
 
       // Listen to status updates
-      this.activeConnector.onStatusChange((statusEvent) => {
+      connector.onStatusChange((statusEvent) => {
         conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
         conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
         conn.errorMessage = statusEvent.errorMessage;
@@ -796,7 +801,7 @@ export class CoreAutomationEngine {
       });
     }
 
-    const success = await this.activeConnector.connect(conn);
+    const success = await connector.connect(conn);
     if (success) {
       FailSafeManager.reset('Conexión establecida exitosamente');
       this.broadcast(
@@ -822,14 +827,21 @@ export class CoreAutomationEngine {
   }
 
   public disconnect(userId?: string) {
-    if (this.activeConnector) {
-      this.activeConnector.disconnect();
+    const targetUserId = userId || 'default';
+    const connector = this.activeConnectors.get(targetUserId);
+    if (connector) {
+      connector.disconnect();
+      this.activeConnectors.delete(targetUserId);
     }
 
     const conn = StateStore.getConnection(userId);
     conn.status = 'disconnected';
     StateStore.saveConnection(conn, userId);
     this.broadcast({ type: 'CONNECTION_STATUS', payload: conn, timestamp: Date.now() }, userId);
+  }
+
+  public getActiveConnector(userId?: string): ITikTokConnector | null {
+    return this.activeConnectors.get(userId || 'default') || null;
   }
 
   public simulateProviderDisconnect(reason: string = 'Pérdida de señal o socket cerrado por TikTok LIVE', userId?: string) {
@@ -875,9 +887,10 @@ export class CoreAutomationEngine {
     );
   }
 
-  public async testLatency(): Promise<number> {
-    if (this.activeConnector) {
-      return this.activeConnector.testLatency();
+  public async testLatency(userId?: string): Promise<number> {
+    const connector = this.activeConnectors.get(userId || 'default');
+    if (connector) {
+      return connector.testLatency();
     }
     return 15;
   }

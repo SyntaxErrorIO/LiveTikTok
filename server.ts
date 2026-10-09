@@ -476,7 +476,30 @@ app.post('/api/rules/:id/toggle', requireAuth, (req: Request, res: Response) => 
 // -------------------------------------------------------------
 app.get('/api/connection', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
-  res.json({ success: true, connection: StateStore.getConnection(user.userId) });
+  const conn = StateStore.getConnection(user.userId);
+  const eulerConfigured = Boolean(
+    (process.env.EULER_STREAM_API_KEY || process.env.EULER_STREAM_KEY || process.env.SIGN_API_KEY || '').trim()
+  );
+  res.json({
+    success: true,
+    connection: conn,
+    meta: {
+      eulerStreamConfigured: eulerConfigured,
+      directConnectorAvailable: true,
+    },
+  });
+});
+
+app.post('/api/connection/config', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { username, bridgeServerUrl, connectorType, autoReconnect } = req.body;
+  const conn = StateStore.getConnection(user.userId);
+  if (typeof username === 'string') conn.username = username.replace(/^@/, '').trim();
+  if (typeof bridgeServerUrl === 'string') conn.bridgeServerUrl = bridgeServerUrl.trim();
+  if (connectorType === 'direct' || connectorType === 'bridge') conn.connectorType = connectorType;
+  if (typeof autoReconnect === 'boolean') conn.autoReconnect = autoReconnect;
+  StateStore.saveConnection(conn, user.userId);
+  return res.json({ success: true, connection: conn });
 });
 
 app.post('/api/connection/mode', requireAuth, (req: Request, res: Response) => {

@@ -1,6 +1,6 @@
 [
   {
-    "id": "rule-int-rose-1791517760855",
+    "id": "rule-int-rose-1791518485157",
     "name": "Regla de Integración Rosas",
     "description": "Prueba de motor",
     "enabled": true,
@@ -21,8 +21,8 @@
     "priority": "high",
     "cooldownSeconds": 0,
     "maxPerHour": 100,
-    "createdAt": 1791517760855,
+    "createdAt": 1791518485157,
     "executionsCount": 1,
-    "lastTriggeredAt": 1791517760856
+    "lastTriggeredAt": 1791518485158
   }
 ]

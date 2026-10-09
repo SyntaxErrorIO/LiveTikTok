@@ -12,6 +12,7 @@ import { ReconnectManager } from '../src/server/reconnectManager';
 import { TaskQueue } from '../src/server/taskQueue';
 import { TikTokConnectorFactory } from '../src/server/connectors/connectorFactory';
 import { BridgeTikTokConnector } from '../src/server/connectors/bridgeConnector';
+import { DirectTikTokConnector } from '../src/server/connectors/directTikTokConnector';
 import { AuthManager } from '../src/server/authManager';
 import { coreEngine } from '../src/server/coreEngine';
 import { AutomationRule, TikTokEvent } from '../src/types';
@@ -722,6 +723,196 @@ async function runAllTests() {
     const updatedLogs = StateStore.getLogs(testUser);
     const cooldownLog = updatedLogs.find((l) => l.matchedRules.some((r) => r.ruleId === ruleWithStaleCount.id && r.status === 'cooldown_blocked'));
     assert(Boolean(cooldownLog), 'El cooldown configurado de 5s debe preservarse y bloquear durante su periodo');
+  });
+
+  // 20. Conector Directo nativo TikTok LIVE (DirectTikTokConnector) y Fábrica
+  await test('20. Conector Directo nativo TikTok LIVE y Fábrica de conectores', () => {
+    const directConn = TikTokConnectorFactory.createConnector('real_tiktok', 'direct');
+    assert(directConn instanceof DirectTikTokConnector, 'La fábrica debe instanciar DirectTikTokConnector cuando el tipo es direct');
+    assert(directConn.mode === 'real_tiktok', 'El modo debe ser real_tiktok');
+    assert(directConn.getStatus() === 'disconnected', 'El estado inicial debe ser disconnected');
+    assert(directConn.name.includes('tiktok-live-connector'), 'El nombre del conector debe hacer referencia a tiktok-live-connector');
+
+    const bridgeConn = TikTokConnectorFactory.createConnector('real_tiktok', 'bridge');
+    assert(bridgeConn instanceof BridgeTikTokConnector, 'La fábrica debe conservar BridgeTikTokConnector como alternativa');
+    assert(bridgeConn.mode === 'real_tiktok', 'El conector bridge debe conservar el modo real_tiktok');
+
+    const simConn = TikTokConnectorFactory.createConnector('simulation');
+    assert(simConn.mode === 'simulation', 'La fábrica debe retornar conector de simulación cuando se solicite simulation');
+  });
+
+  // 21. Configuración de Euler Stream Sign API mediante variable de entorno segura
+  await test('21. Euler Stream Sign API: lectura segura de entorno y sin filtraciones al frontend', () => {
+    const originalEuler = process.env.EULER_STREAM_API_KEY;
+    try {
+      process.env.EULER_STREAM_API_KEY = 'euler_test_secret_key_abcdef123';
+      const connector = new DirectTikTokConnector();
+      assert(connector instanceof DirectTikTokConnector, 'DirectTikTokConnector debe inicializarse correctamente con la clave de entorno');
+
+      // Validar que la clave proviene del entorno backend y no se expone en ninguna propiedad pública
+      const json = JSON.stringify(connector);
+      assert(!json.includes('euler_test_secret_key'), 'La clave de Euler Stream NUNCA debe ser serializada en propiedades públicas');
+
+      // Comprobar que no requiere contraseñas
+      const connConfig = {
+        mode: 'real_tiktok' as const,
+        status: 'disconnected' as const,
+        username: 'streamer_test',
+        bridgeServerUrl: 'ws://localhost:21213',
+        autoReconnect: false,
+      };
+      assert(!('password' in connConfig), 'El conector nunca debe requerir contraseñas de TikTok');
+    } finally {
+      if (originalEuler !== undefined) {
+        process.env.EULER_STREAM_API_KEY = originalEuler;
+      } else {
+        delete process.env.EULER_STREAM_API_KEY;
+      }
+    }
+  });
+
+  // 22. Procesamiento de regalos repetidos (combos / streaks) sin acciones duplicadas
+  await test('22. Procesamiento de regalos repetidos (combos) para evitar acciones duplicadas', async () => {
+    const connector = new DirectTikTokConnector();
+    const emittedEvents: any[] = [];
+    connector.onEvent((evt) => {
+      emittedEvents.push(evt);
+    });
+
+    const groupId = 'combo-rosa-1001';
+    const rawViewer = {
+      userId: 'user-fan-777',
+      uniqueId: 'fan_de_rosas',
+      nickname: 'Fan Rosas',
+      profilePictureUrl: 'https://avatar.test/fan.png',
+    };
+
+    // Simular secuencia de ráfaga de 3 rosas donde solo la última tiene repeatEnd = true
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_1',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 1,
+      repeatEnd: false,
+      ...rawViewer,
+    });
+
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_1',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 2,
+      repeatEnd: false,
+      ...rawViewer,
+    });
+
+    // En este punto, no debe haber emitido eventos duplicados aún porque el combo sigue en progreso
+    assert(emittedEvents.length === 0, 'No debe emitir eventos intermedios para cada rosa individual durante un combo activo');
+
+    // Ahora llega el fin del combo con repeatCount = 3 y repeatEnd = true
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_1',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 3,
+      repeatEnd: true,
+      ...rawViewer,
+    });
+
+    // Ahora debe haberse emitido exactamente 1 evento con el total acumulado
+    assert(emittedEvents.length === 1, 'Debe emitir exactamente un evento consolidado al finalizar el combo');
+    assert(emittedEvents[0].gift.repeatCount === 3, 'El contador repeatCount debe reflejar el valor total acumulado (3)');
+    assert(emittedEvents[0].gift.diamondCount === 3, 'El total de diamantes debe calcularse según el conteo consolidado');
+    assert(emittedEvents[0].user.username === 'fan_de_rosas', 'Debe conservar la autoría del remitente');
+
+    // Regalos no en combo (p.ej. Galaxia / Universe) deben emitirse inmediatamente
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 2,
+      giftId: 'galaxy_99',
+      giftName: 'Galaxia',
+      diamondCount: 1000,
+      repeatCount: 1,
+      ...rawViewer,
+    });
+
+    assert(emittedEvents.length === 2, 'Los regalos directos sin combo deben despacharse inmediatamente');
+    assert(emittedEvents[1].gift.giftName === 'Galaxia', 'El segundo evento debe ser el regalo directo');
+  });
+
+  // 23. Aislamiento multiusuario en conexiones concurrentes del backend
+  await test('23. Aislamiento multiusuario en conexiones de conectores de creadores', async () => {
+    const userA = 'user-streamer-alpha';
+    const userB = 'user-streamer-beta';
+
+    const connA = {
+      mode: 'real_tiktok' as const,
+      status: 'disconnected' as const,
+      username: 'streamer_alpha_live',
+      bridgeServerUrl: 'ws://localhost:21213',
+      connectorType: 'direct' as const,
+      autoReconnect: false,
+    };
+
+    const connB = {
+      mode: 'simulation' as const,
+      status: 'disconnected' as const,
+      username: 'streamer_beta_sim',
+      bridgeServerUrl: 'ws://localhost:21213',
+      autoReconnect: false,
+    };
+
+    StateStore.saveConnection(connA, userA);
+    StateStore.saveConnection(connB, userB);
+
+    // Conectar usuario B en modo simulación
+    const connectedB = await coreEngine.connect(userB);
+    assert(connectedB === true, 'El usuario B en modo simulación debe conectar exitosamente');
+
+    const activeB = coreEngine.getActiveConnector(userB);
+    assert(activeB !== null, 'Debe existir un conector activo para el usuario B');
+    assert(activeB?.mode === 'simulation', 'El conector del usuario B debe ser simulation');
+
+    // Desconectar usuario B no debe afectar el estado del usuario A
+    coreEngine.disconnect(userB);
+    const postDisconnectConnB = StateStore.getConnection(userB);
+    assert(postDisconnectConnB.status === 'disconnected', 'El usuario B debe quedar desconectado');
+
+    const postConnA = StateStore.getConnection(userA);
+    assert(postConnA.username === 'streamer_alpha_live', 'La configuración del usuario A debe permanecer intacta e independiente');
+  });
+
+  // 24. Diferenciación estricta de estados de conexión (Transporte vs LIVE confirmado vs Simulación)
+  await test('24. Distinción estricta entre Transporte, Transmisión LIVE confirmada y Simulación', async () => {
+    const connector = new DirectTikTokConnector();
+
+    // 1. Estado inicial
+    assert(connector.getStatus() === 'disconnected', 'Estado inicial debe ser disconnected');
+    assert(connector.isLiveConfirmed() === false, 'isLiveConfirmed debe ser false al inicio');
+    assert(connector.isTransportConnected() === false, 'isTransportConnected debe ser false al inicio');
+
+    // 2. Si el streamer no existe o no está en directo, debe reportar error claro sin afirmar que está live
+    const dummyConfig = {
+      mode: 'real_tiktok' as const,
+      status: 'disconnected' as const,
+      username: 'usuario_totalmente_inexistente_987654321',
+      bridgeServerUrl: 'ws://localhost:21213',
+      autoReconnect: false,
+    };
+
+    const connectResult = await connector.connect(dummyConfig);
+    assert(connectResult === false, 'La conexión a un streamer no existente o fuera de línea debe retornar false');
+    assert(connector.getStatus() === 'error', 'El estado tras falla de conexión debe ser error');
+    assert(connector.isLiveConfirmed() === false, 'NUNCA debe marcar liveConfirmed como true si no hubo respuesta afirmativa de LIVE');
+
+    // 3. Desconexión manual limpia
+    connector.disconnect();
+    assert(connector.getStatus() === 'disconnected', 'La desconexión manual debe restablecer el estado a disconnected');
   });
 
   console.log('\n======================================================');

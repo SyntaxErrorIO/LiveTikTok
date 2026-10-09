@@ -1,5 +1,139 @@
 [
   {
+    "id": "aud-mv0fumcn-hyxsg",
+    "timestamp": 1791518485415,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0fumcn-vf546",
+    "details": {
+      "username": "streamer_hook_mv0fumb5d5l",
+      "email": "streamer_hook_mv0fumb5d5l@test.com"
+    }
+  },
+  {
+    "id": "aud-mv0fum5f-lmjxj",
+    "timestamp": 1791518485155,
+    "level": "INFO",
+    "category": "BACKUP",
+    "message": "Copia de seguridad creada: snap-mv0fum5e-2mm1",
+    "userId": "user-creator-alpha",
+    "details": {
+      "reason": "Snapshot Alpha",
+      "fileName": "snapshot_snap-mv0fum5e-2mm1_1791518485155.json"
+    }
+  },
+  {
+    "id": "aud-mv0fum5d-1mlld",
+    "timestamp": 1791518485153,
+    "level": "WARN",
+    "category": "AUTH",
+    "message": "Intento de inicio de sesión fallido: contraseña incorrecta",
+    "userId": "usr-mv0fum26-m7hew",
+    "details": {
+      "identifier": "creator_1791518484982@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0fum3t-c6a9n",
+    "timestamp": 1791518485097,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Inicio de sesión exitoso",
+    "userId": "usr-mv0fum26-m7hew",
+    "details": {
+      "username": "creator_test_mv0fum0m"
+    }
+  },
+  {
+    "id": "aud-mv0fum27-rvtzj",
+    "timestamp": 1791518485039,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0fum26-m7hew",
+    "details": {
+      "username": "creator_test_mv0fum0m",
+      "email": "creator_1791518484982@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0foud4-o2v2n",
+    "timestamp": 1791518215864,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0foud4-n2izg",
+    "details": {
+      "username": "streamer_hook_mv0foublohy",
+      "email": "streamer_hook_mv0foublohy@test.com"
+    }
+  },
+  {
+    "id": "aud-mv0fou5v-tauga",
+    "timestamp": 1791518215603,
+    "level": "INFO",
+    "category": "BACKUP",
+    "message": "Copia de seguridad creada: snap-mv0fou5u-8yrl",
+    "userId": "user-creator-alpha",
+    "details": {
+      "reason": "Snapshot Alpha",
+      "fileName": "snapshot_snap-mv0fou5u-8yrl_1791518215603.json"
+    }
+  },
+  {
+    "id": "aud-mv0fou5t-wk1we",
+    "timestamp": 1791518215601,
+    "level": "WARN",
+    "category": "AUTH",
+    "message": "Intento de inicio de sesión fallido: contraseña incorrecta",
+    "userId": "usr-mv0fou2q-ldnbf",
+    "details": {
+      "identifier": "creator_1791518215433@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0fou4a-5dauv",
+    "timestamp": 1791518215546,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Inicio de sesión exitoso",
+    "userId": "usr-mv0fou2q-ldnbf",
+    "details": {
+      "username": "creator_test_mv0fou15"
+    }
+  },
+  {
+    "id": "aud-mv0fou2r-52ku0",
+    "timestamp": 1791518215491,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0fou2q-ldnbf",
+    "details": {
+      "username": "creator_test_mv0fou15",
+      "email": "creator_1791518215433@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0ffzd9-spjzs",
+    "timestamp": 1791517802445,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "Recuperación automática tras reinicio: reconectando proveedor...",
+    "details": {
+      "mode": "simulation",
+      "channel": "streamer_live_pro"
+    }
+  },
+  {
+    "id": "aud-mv0ffzd8-vhfdw",
+    "timestamp": 1791517802444,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "LiveTrigger AI iniciado en puerto 3000 (DESARROLLO)"
+  },
+  {
     "id": "aud-mv0ff3h8-ur9aj",
     "timestamp": 1791517761116,
     "level": "INFO",

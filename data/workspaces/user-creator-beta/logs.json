@@ -1,5 +1,43 @@
 [
   {
+    "id": "log-mv0func2-zoedkre",
+    "eventId": "like-b-1-1791518486690",
+    "eventTimestamp": 1791518486690,
+    "source": "simulation",
+    "eventType": "like",
+    "eventSummary": "+1 Likes",
+    "senderName": "Viewer B",
+    "matchedRules": [
+      {
+        "ruleId": "rule-shared-id-99",
+        "ruleName": "Regla Compartida Beta",
+        "executedActionsCount": 0,
+        "status": "rate_limited"
+      }
+    ],
+    "overallStatus": "no_match",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0fovcj-ospmmcd",
+    "eventId": "like-b-1-1791518217138",
+    "eventTimestamp": 1791518217138,
+    "source": "simulation",
+    "eventType": "like",
+    "eventSummary": "+1 Likes",
+    "senderName": "Viewer B",
+    "matchedRules": [
+      {
+        "ruleId": "rule-shared-id-99",
+        "ruleName": "Regla Compartida Beta",
+        "executedActionsCount": 0,
+        "status": "rate_limited"
+      }
+    ],
+    "overallStatus": "no_match",
+    "executionTimeMs": 1
+  },
+  {
     "id": "log-mv0ff4gm-y64b15j",
     "eventId": "like-b-1-1791517762389",
     "eventTimestamp": 1791517762389,

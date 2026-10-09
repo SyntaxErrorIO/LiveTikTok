@@ -1,0 +1,10 @@
+{
+  "mode": "simulation",
+  "status": "disconnected",
+  "username": "streamer_beta_sim",
+  "bridgeServerUrl": "ws://localhost:21213",
+  "autoReconnect": false,
+  "lastActivityAt": 1791518487850,
+  "pingMs": 14,
+  "viewerCount": 1258
+}

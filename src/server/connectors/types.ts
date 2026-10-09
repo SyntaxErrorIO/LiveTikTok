@@ -14,11 +14,14 @@ export interface ConnectorStatusEvent {
   reconnectAttempts?: number;
   bridgeAvailable?: boolean;
   liveConfirmed?: boolean;
+  transportConnected?: boolean;
+  connectorType?: 'direct' | 'bridge' | 'simulation';
 }
 
 export interface ITikTokConnector {
   readonly name: string;
   readonly mode: 'simulation' | 'real_tiktok';
+  readonly connectorType?: 'direct' | 'bridge' | 'simulation';
 
   getStatus(): ConnectorStatus;
   connect(config: ConnectionConfig): Promise<boolean>;

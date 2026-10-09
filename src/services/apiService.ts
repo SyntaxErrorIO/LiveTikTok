@@ -200,6 +200,20 @@ class ApiService {
     }
   }
 
+  public async saveConnectionConfig(config: Partial<ConnectionConfig>): Promise<ConnectionConfig | null> {
+    try {
+      const res = await this.fetchWithAuth('/api/connection/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const data = await res.json();
+      return data.connection || null;
+    } catch {
+      return null;
+    }
+  }
+
   public async setConnectionMode(mode: 'simulation' | 'real_tiktok'): Promise<ConnectionConfig | null> {
     try {
       const res = await this.fetchWithAuth('/api/connection/mode', {

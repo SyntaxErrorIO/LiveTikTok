@@ -119,5 +119,49 @@
     "overlayToken": "02381137a346a032be970979025a15bc2053e9a17a001a42",
     "createdAt": 1791517761115,
     "lastLoginAt": 1791517761115
+  },
+  {
+    "id": "usr-mv0fou2q-ldnbf",
+    "username": "creator_test_mv0fou15",
+    "email": "creator_1791518215433@streamer.test",
+    "role": "streamer",
+    "passwordHash": "af81a8539e6a307ac4091dc7d665af8cc4599fff341f423ca15292b07a4a5c94e670e552bf8eba85308b37c87afca33d80265a0ffec4a2cd6d0f67f985161c35",
+    "passwordSalt": "177bf102f5b6e7c3d22f20e75e7d33d1",
+    "overlayToken": "459b82597678a5216d67b242a0304baab1dea1431780443b",
+    "createdAt": 1791518215490,
+    "lastLoginAt": 1791518215546
+  },
+  {
+    "id": "usr-mv0foud4-n2izg",
+    "username": "streamer_hook_mv0foublohy",
+    "email": "streamer_hook_mv0foublohy@test.com",
+    "role": "streamer",
+    "passwordHash": "8e41d6788c511eb48cb192e380417c13700050d5aedfd3187d4fceb80cbc0fa976e91d56221a2150cf4cd5c1632226fdb3bfe3e27c30899760dcf7eedbe18a75",
+    "passwordSalt": "1ae711301d32a6540993b7872e80bc53",
+    "overlayToken": "bf5d1b3f08626abd21f06b957213001d52380b0e3d539318",
+    "createdAt": 1791518215864,
+    "lastLoginAt": 1791518215864
+  },
+  {
+    "id": "usr-mv0fum26-m7hew",
+    "username": "creator_test_mv0fum0m",
+    "email": "creator_1791518484982@streamer.test",
+    "role": "streamer",
+    "passwordHash": "8b4c8a04a6e6e8fa4e04ec2c1428127d4f1b65c94d091d728b4dbffdac8f5b27878d4906b1b34f37effe37d5e56c28861d0f41b1434e85c1961e4b653c97d665",
+    "passwordSalt": "d72d4011ab9243cc85c60cebc5962075",
+    "overlayToken": "278838b817b17918d10e1e43c036c6acd29569d0e83b4a24",
+    "createdAt": 1791518485038,
+    "lastLoginAt": 1791518485096
+  },
+  {
+    "id": "usr-mv0fumcn-vf546",
+    "username": "streamer_hook_mv0fumb5d5l",
+    "email": "streamer_hook_mv0fumb5d5l@test.com",
+    "role": "streamer",
+    "passwordHash": "eee3b542f7bda093fd98b7f1c44c2d7cdafc2de8dfa26f5ad40a72295f6b8bef2577f2657ce72cde3994eaaf6c1004c603d9a7ff79652da6d521ab8c3f078376",
+    "passwordSalt": "9473fad17a16fe1061975143220351b2",
+    "overlayToken": "d3adf1d2ace72cf43404176f0428c623c5faca8f3b863361",
+    "createdAt": 1791518485415,
+    "lastLoginAt": 1791518485415
   }
 ]

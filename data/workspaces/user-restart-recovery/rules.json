@@ -1,6 +1,6 @@
 [
   {
-    "id": "rule-stale-restart-1791517762642",
+    "id": "rule-stale-restart-1791518486942",
     "name": "Regla con Contador Antiguo",
     "description": "Prueba de recuperación de reinicio",
     "enabled": true,
@@ -17,8 +17,8 @@
     "priority": "high",
     "cooldownSeconds": 5,
     "maxPerHour": 10,
-    "createdAt": 1791506962642,
-    "lastTriggeredAt": 1791517762643,
+    "createdAt": 1791507686942,
+    "lastTriggeredAt": 1791518486943,
     "executionsCount": 1
   }
 ]

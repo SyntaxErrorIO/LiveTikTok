@@ -1,5 +1,43 @@
 [
   {
+    "id": "log-mv0fum5k-cd6a0kp",
+    "eventId": "evt-gift-1791518485157-qd8i5",
+    "eventTimestamp": 1791518485157,
+    "source": "simulation",
+    "eventType": "gift",
+    "eventSummary": "1x Rosa (1 💎)",
+    "senderName": "Super Fan",
+    "matchedRules": [
+      {
+        "ruleId": "rule-int-rose-1791518485157",
+        "ruleName": "Regla de Integración Rosas",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 1
+  },
+  {
+    "id": "log-mv0fou5z-7lu1llw",
+    "eventId": "evt-gift-1791518215605-9b8rr",
+    "eventTimestamp": 1791518215605,
+    "source": "simulation",
+    "eventType": "gift",
+    "eventSummary": "1x Rosa (1 💎)",
+    "senderName": "Super Fan",
+    "matchedRules": [
+      {
+        "ruleId": "rule-int-rose-1791518215605",
+        "ruleName": "Regla de Integración Rosas",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 1
+  },
+  {
     "id": "log-mv0ff3a1-ewnabp5",
     "eventId": "evt-gift-1791517760855-m0ah0",
     "eventTimestamp": 1791517760855,

@@ -190,6 +190,7 @@ export interface ConnectionConfig {
   username: string;
   roomId?: string;
   bridgeServerUrl: string; // e.g. ws://localhost:21213
+  connectorType?: 'direct' | 'bridge';
   autoReconnect: boolean;
   connectedAt?: number;
   lastActivityAt?: number;

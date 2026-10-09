@@ -26,35 +26,51 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
 }) => {
   const [username, setUsername] = useState(connection.username);
   const [bridgeUrl, setBridgeUrl] = useState(connection.bridgeServerUrl);
+  const [connectorType, setConnectorType] = useState<'direct' | 'bridge'>(connection.connectorType || 'direct');
   const [autoReconnect, setAutoReconnect] = useState(connection.autoReconnect);
   const [isTestingPing, setIsTestingPing] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const handleModeChange = (mode: 'simulation' | 'real_tiktok') => {
+  const handleModeChange = async (mode: 'simulation' | 'real_tiktok') => {
     tikTokService.setMode(mode);
+    const { apiService } = await import('../../services/apiService');
+    await apiService.setConnectionMode(mode);
     onUpdateConnection(tikTokService.getConfig());
     setNotice(
       mode === 'simulation'
         ? 'Cambiado a Modo Simulación. Todos los eventos se procesarán en entorno controlado.'
-        : 'Cambiado a Modo Real. Se requiere un puente WebSocket activo para recibir eventos en vivo.'
+        : 'Cambiado a Conexión Real. Puedes conectar directamente con tiktok-live-connector o mediante el puente WebSocket.'
     );
   };
 
   const handleConnect = async () => {
     tikTokService.updateCredentials(username, bridgeUrl, autoReconnect);
-    const success = await tikTokService.connect();
-    onUpdateConnection(tikTokService.getConfig());
+    const { apiService } = await import('../../services/apiService');
+    await apiService.saveConnectionConfig({
+      username,
+      bridgeServerUrl: bridgeUrl,
+      connectorType,
+      autoReconnect,
+    });
+    const success = await apiService.connect();
     if (success) {
-      setNotice('Conexión establecida correctamente.');
+      const updated = await apiService.getConnection();
+      if (updated) onUpdateConnection(updated);
+      setNotice('Conexión con TikTok LIVE establecida correctamente.');
     } else {
-      setNotice('Fallo al conectar. Revisa el estado del servidor.');
+      const updated = await apiService.getConnection();
+      if (updated) onUpdateConnection(updated);
+      setNotice('No se pudo establecer la conexión. Revisa los mensajes de error.');
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     tikTokService.disconnect();
-    onUpdateConnection(tikTokService.getConfig());
+    const { apiService } = await import('../../services/apiService');
+    await apiService.disconnect();
+    const updated = await apiService.getConnection();
+    if (updated) onUpdateConnection(updated);
     setNotice('Conexión finalizada por el usuario.');
   };
 
@@ -166,13 +182,19 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
                     : 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/30'
                 }`}
               >
-                {connection.mode === 'simulation' ? 'SIMULACIÓN VERIFICADA' : 'TIKTOK BRIDGE'}
+                {connection.mode === 'simulation'
+                  ? 'SIMULACIÓN VERIFICADA'
+                  : connectorType === 'bridge'
+                  ? 'PUENTE WEBSOCKET'
+                  : 'TIKTOK LIVE DIRECTO'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {connection.mode === 'simulation'
                 ? 'Los eventos provienen del generador interno para pruebas y configuración de alertas seguras.'
-                : 'Los eventos son transmitidos directamente por el puente WebSocket desde la sala en vivo.'}
+                : connectorType === 'bridge'
+                ? 'Los eventos son transmitidos por el puente WebSocket local desde la sala en vivo.'
+                : 'Los eventos son leídos directamente por el backend con tiktok-live-connector y firma segura.'}
             </p>
           </div>
         </div>
@@ -259,20 +281,69 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
             </div>
 
             {connection.mode === 'real_tiktok' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Dirección del Puente WebSocket (Connector Daemon)
+              <div className="space-y-3 p-3.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                <label className="block text-xs font-semibold text-slate-200">
+                  Método de Conexión Real
                 </label>
-                <input
-                  type="text"
-                  value={bridgeUrl}
-                  onChange={(e) => setBridgeUrl(e.target.value)}
-                  placeholder="ws://localhost:21213"
-                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700/80 rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Puerto WebSocket local por defecto: <code className="text-cyan-400">ws://localhost:21213</code>
-                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConnectorType('direct')}
+                    className={`p-2.5 rounded-lg text-left border transition-all ${
+                      connectorType === 'direct'
+                        ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center justify-between">
+                      <span>Conector Directo Node.js</span>
+                      {connectorType === 'direct' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      tiktok-live-connector nativo en el servidor. No requiere daemon en localhost.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConnectorType('bridge')}
+                    className={`p-2.5 rounded-lg text-left border transition-all ${
+                      connectorType === 'bridge'
+                        ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center justify-between">
+                      <span>Puente WebSocket</span>
+                      {connectorType === 'bridge' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      Daemon externo independiente en ws://localhost:21213.
+                    </div>
+                  </button>
+                </div>
+
+                {connectorType === 'direct' ? (
+                  <div className="p-2.5 rounded-md bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400">
+                    <span className="text-cyan-300 font-semibold">Euler Stream Sign API:</span> Configurable de forma segura en el backend mediante la variable de entorno <code className="text-amber-300">EULER_STREAM_API_KEY</code>. Nunca expuesta al cliente.
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                      Dirección del Puente WebSocket (Connector Daemon)
+                    </label>
+                    <input
+                      type="text"
+                      value={bridgeUrl}
+                      onChange={(e) => setBridgeUrl(e.target.value)}
+                      placeholder="ws://localhost:21213"
+                      className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700/80 rounded-lg text-white font-mono focus:border-cyan-500 focus:outline-none"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Puerto WebSocket local por defecto: <code className="text-cyan-400">ws://localhost:21213</code>
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -291,10 +362,19 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
 
             <div className="pt-3 border-t border-slate-800 flex justify-end">
               <button
-                onClick={() => {
+                onClick={async () => {
                   tikTokService.updateCredentials(username, bridgeUrl, autoReconnect);
-                  onUpdateConnection(tikTokService.getConfig());
-                  setNotice('Parámetros guardados.');
+                  const { apiService } = await import('../../services/apiService');
+                  await apiService.saveConnectionConfig({
+                    username,
+                    bridgeServerUrl: bridgeUrl,
+                    connectorType,
+                    autoReconnect,
+                  });
+                  const updated = await apiService.getConnection();
+                  if (updated) onUpdateConnection(updated);
+                  else onUpdateConnection(tikTokService.getConfig());
+                  setNotice('Parámetros guardados y sincronizados con el backend.');
                 }}
                 className="px-4 py-2 text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
               >
