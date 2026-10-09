@@ -17,7 +17,9 @@ import {
 } from '../services/storageService';
 import { SystemLogger } from './systemLogger';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = process.env.DATA_DIR?.trim()
+  ? path.resolve(process.env.DATA_DIR.trim())
+  : path.resolve(process.cwd(), 'data');
 const BACKUPS_DIR = path.resolve(DATA_DIR, 'backups');
 const WORKSPACES_DIR = path.resolve(DATA_DIR, 'workspaces');
 
@@ -92,6 +94,16 @@ export interface FullBackupSnapshot {
 }
 
 export class StateStore {
+  public static getDataDirectory(): string {
+    this.ensureDirs();
+    return DATA_DIR;
+  }
+
+  public static getBackupsDirectory(): string {
+    this.ensureDirs();
+    return BACKUPS_DIR;
+  }
+
   private static ensureDirs() {
     [DATA_DIR, BACKUPS_DIR, WORKSPACES_DIR].forEach((dir) => {
       if (!fs.existsSync(dir)) {

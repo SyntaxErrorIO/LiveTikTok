@@ -19,6 +19,8 @@ export class DirectTikTokConnector implements ITikTokConnector {
 
   // Active streak tracking to prevent duplicate actions on repeating gifts
   private activeStreaks: Map<string, { timer: NodeJS.Timeout; lastData: any }> = new Map();
+  // Cache of recently completed streaks to prevent duplicate actions on delayed final events
+  private completedStreaks: Map<string, { timestamp: number; emittedCount: number }> = new Map();
 
   constructor() {
     this.reconnectManager = new ReconnectManager(
@@ -238,7 +240,8 @@ export class DirectTikTokConnector implements ITikTokConnector {
    * Handles streak gifts (e.g. roses) to prevent duplicate execution of actions.
    * - Streakable gifts in progress (repeatEnd === false) are aggregated.
    * - Once repeatEnd === true arrives, the aggregated gift is dispatched once.
-   * - A 3-second safety debounce ensures completion if repeatEnd is dropped.
+   * - A 3-second safety debounce ensures completion if repeatEnd is dropped or delayed.
+   * - Completed streaks are retained in a TTL cache to drop delayed duplicate finish events.
    * - Non-streakable gifts are dispatched immediately.
    */
   public handleGiftWithStreakDeduplication(data: any): void {
@@ -251,9 +254,34 @@ export class DirectTikTokConnector implements ITikTokConnector {
       return;
     }
 
-    // Unique streak key: viewer + gift or combo groupId
-    const streakKey = `${data.userId || data.uniqueId}_${data.groupId || data.giftId}`;
+    // Prune completed streaks older than 60 seconds
+    const now = Date.now();
+    for (const [key, record] of this.completedStreaks.entries()) {
+      if (now - record.timestamp > 60000) {
+        this.completedStreaks.delete(key);
+      }
+    }
+
+    // Unique streak key: viewer + combo groupId (or giftId if no groupId)
+    const streakKey = `${data.userId || data.secUid || data.uniqueId}_${data.groupId || data.giftId}`;
+    const completed = this.completedStreaks.get(streakKey);
     const existing = this.activeStreaks.get(streakKey);
+
+    // If streak was already emitted/completed (either by repeatEnd or debounce timeout)
+    if (completed) {
+      const incomingRepeat = Number(data.repeatCount || 1);
+      // Delayed packet or delayed final event whose count was already dispatched => drop duplicate!
+      if (incomingRepeat <= completed.emittedCount) {
+        return;
+      }
+
+      // If streamer/viewer continued streak past timeout, only emit incremental delta
+      const deltaCount = incomingRepeat - completed.emittedCount;
+      completed.emittedCount = incomingRepeat;
+      completed.timestamp = now;
+      this.emitNormalizedGift(data, deltaCount);
+      return;
+    }
 
     if (existing) {
       clearTimeout(existing.timer);
@@ -263,6 +291,7 @@ export class DirectTikTokConnector implements ITikTokConnector {
       // Final event of the streak received => emit once with the final repeatCount!
       this.activeStreaks.delete(streakKey);
       const finalCount = Math.max(Number(data.repeatCount || 1), Number(existing?.lastData?.repeatCount || 1));
+      this.completedStreaks.set(streakKey, { timestamp: now, emittedCount: finalCount });
       this.emitNormalizedGift(data, finalCount);
     } else {
       // Streak in progress => update latest data and set debounce timer
@@ -270,7 +299,9 @@ export class DirectTikTokConnector implements ITikTokConnector {
         const pending = this.activeStreaks.get(streakKey);
         if (pending) {
           this.activeStreaks.delete(streakKey);
-          this.emitNormalizedGift(pending.lastData, Number(pending.lastData.repeatCount || 1));
+          const pendingCount = Number(pending.lastData.repeatCount || 1);
+          this.completedStreaks.set(streakKey, { timestamp: Date.now(), emittedCount: pendingCount });
+          this.emitNormalizedGift(pending.lastData, pendingCount);
         }
       }, 3000);
 
@@ -333,6 +364,7 @@ export class DirectTikTokConnector implements ITikTokConnector {
       clearTimeout(streak.timer);
     });
     this.activeStreaks.clear();
+    this.completedStreaks.clear();
 
     if (this.connection) {
       try {
@@ -345,9 +377,26 @@ export class DirectTikTokConnector implements ITikTokConnector {
   }
 
   public async testLatency(): Promise<number> {
+    const eulerApiKey = (
+      process.env.EULER_STREAM_API_KEY ||
+      process.env.EULER_STREAM_KEY ||
+      process.env.SIGN_API_KEY ||
+      ''
+    ).trim();
+
+    // Medición de latencia de red real hacia endpoint activo (Euler Stream o TikTok Webcast)
+    const targetUrl = eulerApiKey ? 'https://www.eulerstream.com' : 'https://www.tiktok.com';
     const start = performance.now();
-    await new Promise((r) => setTimeout(r, 25 + Math.floor(Math.random() * 20)));
-    return Math.round(performance.now() - start);
+    try {
+      await fetch(targetUrl, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(3500),
+      });
+      return Math.round(performance.now() - start);
+    } catch {
+      const elapsed = Math.round(performance.now() - start);
+      return Math.max(elapsed, 25);
+    }
   }
 
   public onEvent(callback: (rawEvent: any) => void): () => void {

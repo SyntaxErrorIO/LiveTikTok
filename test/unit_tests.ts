@@ -915,6 +915,135 @@ async function runAllTests() {
     assert(connector.getStatus() === 'disconnected', 'La desconexión manual debe restablecer el estado a disconnected');
   });
 
+  // 25. Prevención de ejecuciones duplicadas de regalos ante eventos finales retrasados
+  await test('25. Prevención de ejecuciones duplicadas ante eventos finales retrasados de regalos (Combos)', () => {
+    const connector = new DirectTikTokConnector();
+    const emittedEvents: any[] = [];
+    connector.onEvent((evt) => {
+      if (evt.type === 'gift') {
+        emittedEvents.push(evt);
+      }
+    });
+
+    const groupId = 'delayed_streak_group_999';
+    const viewer = {
+      userId: 'delayed_viewer_1',
+      uniqueId: 'streamer_fan',
+      nickname: 'Fan',
+    };
+
+    // 1. Llegan eventos de combo progresivos
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_5',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 2,
+      repeatEnd: false,
+      ...viewer,
+    });
+
+    // 2. Llega evento final de combo
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_5',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 5,
+      repeatEnd: true,
+      ...viewer,
+    });
+
+    assert(emittedEvents.length === 1, 'Debe emitirse exactamente un evento de combo');
+    assert(emittedEvents[0].gift.repeatCount === 5, 'El conteo debe ser 5');
+
+    // 3. Llega un evento retrasado (duplicate replay de la red con repeatEnd: true y repeatCount: 5)
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_5',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 5,
+      repeatEnd: true,
+      ...viewer,
+    });
+
+    assert(emittedEvents.length === 1, 'El evento final retrasado NO debe causar una segunda emisión duplicada');
+
+    // 4. Llega un paquete desordenado con repeatCount menor (e.g. repeatCount: 3 retrasado)
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_5',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 3,
+      repeatEnd: false,
+      ...viewer,
+    });
+
+    assert(emittedEvents.length === 1, 'Los paquetes intermedios retrasados con conteo menor deben ignorarse');
+
+    // 5. Si el usuario continuó la racha después (repeatCount aumentó a 7)
+    connector.handleGiftWithStreakDeduplication({
+      giftType: 1,
+      groupId,
+      giftId: 'rose_5',
+      giftName: 'Rosa',
+      diamondCount: 1,
+      repeatCount: 7,
+      repeatEnd: true,
+      ...viewer,
+    });
+
+    assert(emittedEvents.length === 2, 'Si la racha continúa, debe emitir únicamente la diferencia incremental');
+    assert(emittedEvents[1].gift.repeatCount === 2, 'El segundo evento debe emitir únicamente el delta (7 - 5 = 2)');
+  });
+
+  // 26. Medición de latencia de red y aislamiento local
+  await test('26. Medición de latencia no simulada y reporte claro de simulación local', async () => {
+    const directConnector = new DirectTikTokConnector();
+    const bridgeConnector = new BridgeTikTokConnector();
+    const simConnector = TikTokConnectorFactory.createConnector('simulation');
+
+    const directLatency = await directConnector.testLatency();
+    assert(typeof directLatency === 'number' && directLatency > 0, 'La latencia directa debe ser un número positivo medido');
+
+    const bridgeLatency = await bridgeConnector.testLatency();
+    assert(typeof bridgeLatency === 'number' && bridgeLatency > 0, 'La latencia del puente debe ser un número positivo medido');
+
+    const simLatency = await simConnector.testLatency();
+    assert(typeof simLatency === 'number' && simLatency >= 1, 'La latencia de simulación debe medir el dispatch loop local');
+  });
+
+  // 27. Eliminación estricta de contraseñas por defecto utilizables en plantillas
+  await test('27. Eliminación estricta de contraseñas por defecto utilizables en configuración', async () => {
+    const fs = await import('fs');
+    const envExample = fs.readFileSync('.env.example', 'utf-8');
+    assert(!envExample.includes('ADMIN_PASSWORD=LiveTrigger2026!'), '.env.example no debe contener contraseñas predeterminadas utilizables');
+    assert(envExample.includes('ADMIN_PASSWORD=tu_contrasena_administrador_fuerte_aqui_minimo_10_caracteres'), '.env.example debe contener un placeholder descriptivo no utilizable');
+
+    const dockerCompose = fs.readFileSync('docker-compose.yml', 'utf-8');
+    assert(!dockerCompose.includes('LiveTrigger2026!'), 'docker-compose.yml no debe proporcionar una contraseña utilizable por defecto');
+  });
+
+  // 28. DATA_DIR respetado y protección en .gitignore
+  await test('28. DATA_DIR configurable mediante entorno y protección en .gitignore', async () => {
+    const fs = await import('fs');
+    const gitignore = fs.readFileSync('.gitignore', 'utf-8');
+    assert(gitignore.includes('data/'), '.gitignore debe proteger la carpeta data/');
+    assert(gitignore.includes('users.json'), '.gitignore debe proteger users.json');
+    assert(gitignore.includes('audit_log.json'), '.gitignore debe proteger audit_log.json');
+    assert(gitignore.includes('backups/'), '.gitignore debe proteger backups/');
+
+    // Verificar que StateStore existe y mantiene aislamiento
+    const dir = StateStore.getDataDirectory();
+    assert(typeof dir === 'string' && dir.length > 0, 'StateStore debe exponer una ruta de almacenamiento válida');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

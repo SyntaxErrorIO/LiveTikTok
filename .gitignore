@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Almacenamiento persistente local y datos sensibles de usuarios
+data/
+data/*
+!data/.gitkeep
+users.json
+audit_log.json
+logs.json
+backups/
+*.json.bak
+*.sqlite
+*.db

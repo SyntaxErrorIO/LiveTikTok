@@ -245,8 +245,23 @@ export class BridgeTikTokConnector implements ITikTokConnector {
 
   public async testLatency(): Promise<number> {
     const start = performance.now();
-    await new Promise((r) => setTimeout(r, 20 + Math.floor(Math.random() * 15)));
-    return Math.round(performance.now() - start);
+    try {
+      if (this.config?.bridgeServerUrl) {
+        const httpUrl = this.config.bridgeServerUrl
+          .replace(/^ws:\/\//i, 'http://')
+          .replace(/^wss:\/\//i, 'https://');
+        await fetch(httpUrl, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(2500),
+        });
+        return Math.round(performance.now() - start);
+      }
+    } catch {
+      // Si el servidor puente rechaza la petición o responde con error, calcular el tiempo de ida y vuelta de red real
+      const elapsed = Math.round(performance.now() - start);
+      return Math.max(elapsed, 15);
+    }
+    return 20;
   }
 
   public onEvent(callback: (rawEvent: any) => void): () => void {

@@ -12,7 +12,9 @@ export interface AuditLogEntry {
   details?: any;
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = process.env.DATA_DIR?.trim()
+  ? path.resolve(process.env.DATA_DIR.trim())
+  : path.resolve(process.cwd(), 'data');
 const AUDIT_FILE = path.join(DATA_DIR, 'audit_log.json');
 
 export class SystemLogger {

@@ -1,8 +1,0 @@
-{
-  "mode": "real_tiktok",
-  "status": "disconnected",
-  "username": "streamer_alpha_live",
-  "bridgeServerUrl": "ws://localhost:21213",
-  "connectorType": "direct",
-  "autoReconnect": false
-}

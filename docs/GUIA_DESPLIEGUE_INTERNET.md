@@ -104,10 +104,10 @@ NODE_ENV=production
 # Clave secreta para tokens de autenticación JWT (Generar con: openssl rand -hex 32)
 JWT_SECRET=c1f4e09f87b8d65421ac7a892b45e7f1234abcd567890ef123456789abcdef01
 
-# Credenciales de la cuenta administradora inicial
+# Credenciales de la cuenta administradora inicial (REEMPLAZA con tu propia clave secreta única)
 ADMIN_USERNAME=admin
 ADMIN_EMAIL=streamer@tudominio.com
-ADMIN_PASSWORD=ContraseñaSuperSegura2026!
+ADMIN_PASSWORD=Reemplazar_Con_Tu_Contrasena_Robusta_Unica_Minimo_10_Chars
 
 # Clave de validación para webhooks externos (opcional pero recomendada)
 TIKTOK_WEBHOOK_SECRET=token_aleatorio_para_webhooks_externos

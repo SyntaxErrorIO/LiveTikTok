@@ -46,10 +46,21 @@ export class SimulationConnector implements ITikTokConnector {
     this.notifyStatus();
   }
 
+  /**
+   * Nota técnica: El modo simulación se ejecuta 100% en memoria local (in-process).
+   * Al no utilizar sockets ni conexiones de red externas, no existe latencia de transporte remoto.
+   * Se mide la latencia real del bucle de eventos local (microtask dispatch RTT).
+   */
   public async testLatency(): Promise<number> {
     const start = performance.now();
-    await new Promise((r) => setTimeout(r, 12 + Math.floor(Math.random() * 8)));
-    return Math.round(performance.now() - start);
+    await new Promise((resolve) => {
+      if (typeof setImmediate === 'function') {
+        setImmediate(resolve);
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+    return Math.max(1, Math.round(performance.now() - start));
   }
 
   public onEvent(callback: (rawEvent: any) => void): () => void {
