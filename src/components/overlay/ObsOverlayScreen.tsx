@@ -5,6 +5,7 @@ import { audioEngine } from '../../services/audioEngine';
 import { Sparkles, Zap, Crown, Flame, Heart, Radio, Target, Trophy, Award } from 'lucide-react';
 import { LeaderboardEntry, StreamCounter } from '../../types';
 import { StorageService } from '../../services/storageService';
+import { apiService } from '../../services/apiService';
 
 interface ActiveOverlay {
   id: string;
@@ -22,7 +23,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
 
   // 4b: Metas de regalos (Gift Goal)
   const [goalTitle, setGoalTitle] = useState('Meta de Diamantes');
-  const [goalCurrent, setGoalCurrent] = useState(320);
+  const [goalCurrent, setGoalCurrent] = useState(0);
   const [goalTarget, setGoalTarget] = useState(500);
   const [goalReachedCelebrated, setGoalReachedCelebrated] = useState(false);
   const [showGoal, setShowGoal] = useState(true);
@@ -31,41 +32,82 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
   const [topDonors, setTopDonors] = useState<LeaderboardEntry[]>([]);
   const [showTopDonors, setShowTopDonors] = useState(true);
 
-  // Initialize data from local storage or URL query parameters
+  // Initialize data from server (via overlayToken) or local fallback
   useEffect(() => {
-    try {
-      const counters = StorageService.getCounters();
-      const diamondsCounter = counters.find((c: StreamCounter) => c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')) || counters[0];
-      if (diamondsCounter) {
-        setGoalTitle(diamondsCounter.name);
-        setGoalCurrent(diamondsCounter.current);
-        setGoalTarget(diamondsCounter.target || 500);
+    let overlayToken: string | null = null;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      overlayToken = params.get('overlayToken');
+      if (params.get('showGoal') === 'false') setShowGoal(false);
+      if (params.get('showTop') === 'false') setShowTopDonors(false);
+      if (params.get('goalTarget')) setGoalTarget(Number(params.get('goalTarget')));
+    }
+
+    const fetchServerState = async () => {
+      // 1. Fetch persistent server state so progress survives OBS browser source reloads
+      if (overlayToken) {
+        try {
+          const state = await apiService.getOverlayState(overlayToken);
+          if (state && state.success) {
+            if (state.goal) {
+              setGoalTitle(state.goal.title || 'Meta de Diamantes');
+              setGoalCurrent(state.goal.current || 0);
+              if (state.goal.target) setGoalTarget(state.goal.target);
+            }
+            if (Array.isArray(state.topDonors)) {
+              setTopDonors(state.topDonors);
+            }
+            return;
+          }
+        } catch {}
       }
 
-      const leaderboard = StorageService.getLeaderboard();
-      if (leaderboard && leaderboard.length > 0) {
-        setTopDonors(leaderboard.slice(0, 5));
-      } else {
-        // Sample baseline for aesthetic rendering in OBS
-        setTopDonors([
-          { userId: '1', username: 'AstroVIP', nickname: 'Astro VIP', points: 1250, giftsCount: 14, lastUpdated: Date.now() },
-          { userId: '2', username: 'RosaFan', nickname: 'Rosa Fan', points: 680, giftsCount: 22, lastUpdated: Date.now() },
-          { userId: '3', username: 'LionKing', nickname: 'Rey León', points: 500, giftsCount: 3, lastUpdated: Date.now() },
-        ]);
-      }
+      // 2. Fallback to local storage if not running with server overlay token
+      try {
+        const counters = StorageService.getCounters();
+        const diamondsCounter = counters.find((c: StreamCounter) => c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')) || counters[0];
+        if (diamondsCounter) {
+          setGoalTitle(diamondsCounter.name);
+          setGoalCurrent(diamondsCounter.current || 0);
+          setGoalTarget(diamondsCounter.target || 500);
+        }
 
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('showGoal') === 'false') setShowGoal(false);
-        if (params.get('showTop') === 'false') setShowTopDonors(false);
-        if (params.get('goalTarget')) setGoalTarget(Number(params.get('goalTarget')));
+        const leaderboard = StorageService.getLeaderboard();
+        if (leaderboard && leaderboard.length > 0) {
+          setTopDonors(leaderboard.slice(0, 5));
+        } else {
+          setTopDonors([]);
+        }
+      } catch {}
+    };
+
+    fetchServerState();
+  }, []);
+
+  // Listen to SSE broadcasts for live counter/leaderboard updates
+  useEffect(() => {
+    const unsubscribeSSE = apiService.onSSEMessage((msg) => {
+      if (msg.type === 'COUNTERS_UPDATED' && Array.isArray(msg.payload)) {
+        const diamondCounter = msg.payload.find((c: StreamCounter) =>
+          c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')
+        );
+        if (diamondCounter) {
+          setGoalCurrent(diamondCounter.current || 0);
+          if (diamondCounter.target) setGoalTarget(diamondCounter.target);
+        }
+      } else if (msg.type === 'LEADERBOARD_UPDATED' && Array.isArray(msg.payload)) {
+        setTopDonors(msg.payload.slice(0, 5));
       }
-    } catch {}
+    });
+
+    return () => {
+      unsubscribeSSE();
+    };
   }, []);
 
   // Check if goal reached to trigger celebratory animation
   useEffect(() => {
-    if (goalCurrent >= goalTarget && !goalReachedCelebrated && goalTarget > 0) {
+    if (goalCurrent >= goalTarget && !goalReachedCelebrated && goalTarget > 0 && goalCurrent > 0) {
       setGoalReachedCelebrated(true);
       try {
         confetti({
@@ -343,7 +385,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       )}
 
       {/* 4c. TOP DONADORES: Ranking persistente de los 5 mayores donantes */}
-      {showTopDonors && topDonors.length > 0 && (
+      {showTopDonors && (
         <div className="absolute bottom-6 left-6 z-40 max-w-[280px] w-full">
           <div className="p-3.5 rounded-xl bg-slate-950/85 border border-amber-500/30 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80 mb-2">
@@ -354,36 +396,42 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
               <span className="text-[10px] text-slate-500 font-mono">Top 5</span>
             </div>
 
-            <div className="space-y-1.5">
-              {topDonors.map((donor, idx) => (
-                <div
-                  key={`${donor.username}-${idx}`}
-                  className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-900/60 border border-slate-800/50"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`font-mono font-bold text-[11px] w-4 ${
-                        idx === 0
-                          ? 'text-amber-300'
-                          : idx === 1
-                          ? 'text-slate-300'
-                          : idx === 2
-                          ? 'text-amber-600'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
-                    </span>
-                    <span className="font-semibold text-white truncate text-[11px]">
-                      @{donor.username}
+            {topDonors.length === 0 ? (
+              <div className="py-2.5 px-3 rounded-lg bg-slate-900/50 border border-slate-800/50 text-center text-xs text-slate-400 italic">
+                Aún no hay donadores
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {topDonors.map((donor, idx) => (
+                  <div
+                    key={`${donor.username}-${idx}`}
+                    className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-900/60 border border-slate-800/50"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`font-mono font-bold text-[11px] w-4 ${
+                          idx === 0
+                            ? 'text-amber-300'
+                            : idx === 1
+                            ? 'text-slate-300'
+                            : idx === 2
+                            ? 'text-amber-600'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                      </span>
+                      <span className="font-semibold text-white truncate text-[11px]">
+                        @{donor.username}
+                      </span>
+                    </div>
+                    <span className="font-mono text-cyan-300 font-bold tabular-nums text-[11px] shrink-0">
+                      {donor.points.toLocaleString()} 💎
                     </span>
                   </div>
-                  <span className="font-mono text-cyan-300 font-bold tabular-nums text-[11px] shrink-0">
-                    {donor.points.toLocaleString()} 💎
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

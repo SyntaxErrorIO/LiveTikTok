@@ -27,55 +27,30 @@ export const DEFAULT_COUNTERS: StreamCounter[] = [
   {
     id: 'cnt-roses-goal',
     name: 'Meta de Rosas del Directo',
-    current: 42,
+    current: 0,
     target: 100,
     unit: 'Rosas',
     lastUpdated: Date.now(),
   },
   {
     id: 'cnt-diamonds-session',
-    name: 'Diamantes Acumulados',
-    current: 2450,
-    target: 10000,
+    name: 'Meta de Diamantes',
+    current: 0,
+    target: 500,
     unit: 'Diamantes',
     lastUpdated: Date.now(),
   },
   {
     id: 'cnt-likes-rush',
     name: 'Ráfaga de Likes Comunitarios',
-    current: 15400,
+    current: 0,
     target: 50000,
     unit: 'Taps',
     lastUpdated: Date.now(),
   },
 ];
 
-export const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [
-  {
-    userId: 'usr-carlos_pro',
-    username: 'carlos_pro',
-    nickname: 'Carlos El León',
-    points: 2500,
-    giftsCount: 14,
-    lastUpdated: Date.now() - 3600000,
-  },
-  {
-    userId: 'usr-mariana_stream',
-    username: 'mariana_stream',
-    nickname: 'Mariana VIP',
-    points: 1200,
-    giftsCount: 8,
-    lastUpdated: Date.now() - 7200000,
-  },
-  {
-    userId: 'usr-david_gamer',
-    username: 'david_gamer',
-    nickname: 'David 🎮',
-    points: 600,
-    giftsCount: 22,
-    lastUpdated: Date.now() - 10800000,
-  },
-];
+export const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [];
 
 export interface FullBackupSnapshot {
   id: string;

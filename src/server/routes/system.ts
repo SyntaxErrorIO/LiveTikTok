@@ -4,6 +4,7 @@ import { coreEngine } from '../coreEngine';
 import { FailSafeManager } from '../failSafeManager';
 import { SystemLogger } from '../systemLogger';
 import { AutomatedTestRunner } from '../testRunner';
+import { AuthManager } from '../authManager';
 import { AuthedRequest } from '../types';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 
@@ -162,7 +163,77 @@ router.post('/api/settings', requireAuth, (req: Request, res: Response) => {
   const updated = { ...current, ...req.body };
   StateStore.saveSettings(updated, userId);
   coreEngine.setMasterAutomation(updated.masterAutomationEnabled, userId);
+
+  // Sync goalTargetDiamonds with diamonds counter target in persistent StateStore
+  if (req.body.goalTargetDiamonds !== undefined) {
+    const target = Math.max(1, Number(req.body.goalTargetDiamonds));
+    const counters = StateStore.getCounters(userId);
+    const diamondCounter = counters.find(
+      (c) => c.name.toLowerCase().includes('diamante') || c.id.toLowerCase().includes('diamond')
+    );
+    if (diamondCounter) {
+      diamondCounter.target = target;
+      StateStore.saveCounters(counters, userId);
+      coreEngine.broadcast(
+        {
+          type: 'COUNTERS_UPDATED',
+          payload: counters,
+          timestamp: Date.now(),
+        },
+        userId
+      );
+    }
+  }
+
   return res.json({ success: true, settings: updated });
+});
+
+// Read-only overlay state endpoint for OBS Screen synchronization
+router.get('/api/overlay/state', (req: Request, res: Response) => {
+  const overlayToken = typeof req.query.overlayToken === 'string' ? req.query.overlayToken.trim() : undefined;
+  if (!overlayToken) {
+    return res.status(400).json({ success: false, error: 'Parámetro overlayToken requerido.' });
+  }
+
+  const user = AuthManager.getUserByOverlayToken(overlayToken);
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Token de overlay inválido o expirado.' });
+  }
+
+  const counters = StateStore.getCounters(user.id);
+  const diamondCounter = counters.find(
+    (c) => c.name.toLowerCase().includes('diamante') || c.id.toLowerCase().includes('diamond')
+  ) || counters[0] || {
+    id: 'cnt-diamonds-session',
+    name: 'Meta de Diamantes',
+    current: 0,
+    target: 500,
+    unit: 'Diamantes',
+    lastUpdated: Date.now(),
+  };
+
+  const settings = StateStore.getSettings(user.id);
+  const effectiveTarget = settings.goalTargetDiamonds || diamondCounter.target || 500;
+
+  const leaderboard = StateStore.getLeaderboard(user.id);
+  const topDonors = leaderboard.slice(0, 5);
+
+  return res.json({
+    success: true,
+    user: {
+      userId: user.id,
+      username: user.username,
+    },
+    goal: {
+      id: diamondCounter.id,
+      title: diamondCounter.name,
+      current: diamondCounter.current || 0,
+      target: effectiveTarget,
+      unit: diamondCounter.unit || 'Diamantes',
+      lastUpdated: diamondCounter.lastUpdated || Date.now(),
+    },
+    topDonors,
+  });
 });
 
 router.post('/api/settings/pause', requireAuth, (req: Request, res: Response) => {

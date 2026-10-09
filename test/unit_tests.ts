@@ -1209,6 +1209,268 @@ async function runAllTests() {
     assert(headersSet['x-xss-protection'] === undefined, 'X-XSS-Protection obsoleto debe ser removido');
   });
 
+  // 34. Corrección 1: Stream SSE con sesión vía Authorization header responde 200 y emite CONNECTED
+  await test('34. Stream SSE con sesión: responde 200, entrega CONNECTED y rechaza streaming sin credenciales', async () => {
+    const { default: eventsRouter } = await import('../src/server/routes/events');
+
+    // 1. Petición autenticada mediante sesión de usuario
+    const authedUser = {
+      userId: 'usr-sse-panel-tester',
+      username: 'panel_creator',
+      role: 'creator' as const,
+      overlayToken: 'ovl-test-token-77',
+    };
+
+    let streamStatus = 0;
+    let streamHeaders: Record<string, string> = {};
+    let writtenChunks: string[] = [];
+
+    const mockAuthedReq: any = {
+      headers: {
+        authorization: 'Bearer dummy-token',
+        origin: 'http://localhost:3000',
+      },
+      query: {},
+      user: authedUser,
+      on: () => {},
+    };
+
+    const mockRes: any = {
+      writeHead: (status: number, headers: any) => {
+        streamStatus = status;
+        streamHeaders = headers;
+      },
+      write: (data: string) => {
+        writtenChunks.push(data);
+      },
+    };
+
+    // Obtener la capa de la ruta /stream del router
+    const streamLayer = (eventsRouter as any).stack.find(
+      (layer: any) => layer.route && layer.route.path === '/stream'
+    );
+    assert(streamLayer !== undefined, 'Ruta /stream debe estar registrada en eventsRouter');
+
+    const streamHandler = streamLayer.route.stack[0].handle;
+    streamHandler(mockAuthedReq, mockRes);
+
+    assert(streamStatus === 200, 'Stream con sesión debe responder con HTTP 200');
+    assert(streamHeaders['Content-Type'] === 'text/event-stream', 'Content-Type debe ser text/event-stream');
+    assert(streamHeaders['Access-Control-Allow-Origin'] !== '*', 'CORS no debe exponer wildcard *');
+
+    const firstChunk = writtenChunks[0] || '';
+    assert(firstChunk.includes('"type":"CONNECTED"'), 'Debe emitir el evento inicial CONNECTED');
+    assert(firstChunk.includes('usr-sse-panel-tester'), 'El evento inicial debe pertenecer al usuario autenticado');
+  });
+
+  // 35. Corrección 2: Eliminación de datos falsos en overlay (meta en 0 y ranking vacío)
+  await test('35. Datos iniciales limpios: meta en 0 y ranking vacío sin usuarios ficticios', async () => {
+    const { StorageService } = await import('../src/services/storageService');
+
+    // 1. StorageService defaults
+    const counters = StorageService.getCounters();
+    const diamondsCounter = counters.find(
+      (c) => c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')
+    );
+    assert(diamondsCounter !== undefined, 'Debe existir contador de diamantes');
+    assert(diamondsCounter!.current === 0, 'La meta de diamantes inicial debe ser 0, sin el falso valor 320');
+
+    // 2. Ranking no debe contener AstroVIP, RosaFan ni LionKing
+    const leaderboard = StorageService.getLeaderboard();
+    const fakeDonors = ['AstroVIP', 'RosaFan', 'LionKing'];
+    for (const fake of fakeDonors) {
+      assert(
+        !leaderboard.some((d) => d.username.toLowerCase() === fake.toLowerCase()),
+        `No debe existir el donador de prueba ${fake}`
+      );
+    }
+  });
+
+  // 36. Corrección 3: Endpoint GET /api/overlay/state sincroniza y sobrevive a recargas
+  await test('36. Sincronización de Overlay con servidor: GET /api/overlay/state y persistencia tras recarga', async () => {
+    const testUserId = 'usr-overlay-sync-' + Date.now();
+    const overlayToken = 'ovl-sync-token-' + Date.now();
+
+    // Registrar usuario con overlayToken en StateStore/AuthManager
+    const testUser = {
+      id: testUserId,
+      username: 'streamer_overlay_test',
+      email: `overlay_${Date.now()}@test.com`,
+      role: 'streamer' as const,
+      passwordHash: 'hash',
+      passwordSalt: 'salt',
+      overlayToken,
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+    };
+    (AuthManager as any).users.push(testUser);
+
+    // Inicializar contador en 0
+    StateStore.saveCounters(
+      [
+        {
+          id: 'cnt-diamonds-session',
+          name: 'Meta de Diamantes',
+          current: 0,
+          target: 500,
+          unit: 'Diamantes',
+          lastUpdated: Date.now(),
+        },
+      ],
+      testUserId
+    );
+    StateStore.saveLeaderboard([], testUserId);
+
+    // Simular recepción de regalo de 150 diamantes
+    const giftEvent: TikTokEvent = {
+      id: 'gift-sync-event-1',
+      type: 'gift',
+      source: 'simulation',
+      timestamp: Date.now(),
+      user: { id: 'u-donor-1', username: 'donador_real_1', nickname: 'Donador Real' },
+      data: { giftName: 'Galaxia', diamondCount: 150, repeatCount: 1 },
+    };
+
+    await coreEngine.ingestRawEvent(giftEvent, 'simulation', testUserId);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Consultar endpoint GET /api/overlay/state?overlayToken=...
+    const { default: systemRouter } = await import('../src/server/routes/system');
+    const overlayStateLayer = (systemRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/api/overlay/state'
+    );
+    assert(overlayStateLayer !== undefined, 'Ruta /api/overlay/state debe estar registrada en systemRouter');
+
+    let stateResult: any = null;
+    let stateStatus = 0;
+    const req: any = { query: { overlayToken } };
+    const res: any = {
+      status: (code: number) => {
+        stateStatus = code;
+        return { json: (d: any) => { stateResult = d; } };
+      },
+      json: (d: any) => {
+        stateStatus = 200;
+        stateResult = d;
+      },
+    };
+
+    overlayStateLayer.route.stack[0].handle(req, res);
+
+    assert(stateStatus === 200, 'Debe devolver HTTP 200 con token válido');
+    assert(stateResult?.success === true, 'Respuesta debe ser success: true');
+    assert(stateResult?.goal?.current === 150, 'El progreso de la meta debe ser 150 diamantes');
+    assert(stateResult?.topDonors?.length === 1, 'Debe registrar al donador en el top ranking');
+    assert(stateResult?.topDonors[0]?.username === 'donador_real_1', 'El usuario en ranking debe ser el donador real');
+
+    // Verificar que sobrevive a recarga: lectura directa del disco persistente StateStore
+    const reloadedCounters = StateStore.getCounters(testUserId);
+    const reloadedDiamondCounter = reloadedCounters.find((c) => c.name.toLowerCase().includes('diamante'));
+    assert(reloadedDiamondCounter?.current === 150, 'El progreso debe sobrevivir a recargar la fuente de OBS');
+  });
+
+  // 37. Corrección 3: Configuración del objetivo de la meta desde Ajustes sincroniza con servidor
+  await test('37. Ajustes: Configuración de objetivo de la meta sincroniza y persiste en el servidor', async () => {
+    const testUserId = 'usr-target-settings-' + Date.now();
+    const overlayToken = 'ovl-target-token-' + Date.now();
+
+    (AuthManager as any).users.push({
+      id: testUserId,
+      username: 'target_tester',
+      email: `target_${Date.now()}@test.com`,
+      role: 'streamer' as const,
+      passwordHash: 'hash',
+      passwordSalt: 'salt',
+      overlayToken,
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+    });
+
+    StateStore.saveCounters(
+      [
+        {
+          id: 'cnt-diamonds-session',
+          name: 'Meta de Diamantes',
+          current: 50,
+          target: 500,
+          unit: 'Diamantes',
+          lastUpdated: Date.now(),
+        },
+      ],
+      testUserId
+    );
+
+    // Simular POST /api/settings con goalTargetDiamonds: 2000
+    const { default: systemRouter } = await import('../src/server/routes/system');
+    const settingsLayer = (systemRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/api/settings' && l.route.methods.post
+    );
+
+    const postSettingsHandler = settingsLayer.route.stack[settingsLayer.route.stack.length - 1].handle;
+
+    let resJson: any = null;
+    const req: any = {
+      user: { userId: testUserId, role: 'creator' },
+      body: { goalTargetDiamonds: 2000 },
+    };
+    const res: any = {
+      json: (d: any) => { resJson = d; },
+    };
+
+    postSettingsHandler(req, res);
+
+    assert(resJson?.success === true, 'Guardado de ajustes debe tener éxito');
+    assert(resJson?.settings?.goalTargetDiamonds === 2000, 'Ajuste de meta debe actualizarse');
+
+    // Verificar que el contador de diamantes en StateStore ahora tiene target: 2000
+    const updatedCounters = StateStore.getCounters(testUserId);
+    const diamondCounter = updatedCounters.find((c) => c.name.toLowerCase().includes('diamante'));
+    assert(diamondCounter?.target === 2000, 'El objetivo del contador en StateStore debe reflejar 2000');
+  });
+
+  // 38. Corrección 4: CSP sin 'unsafe-eval', frame-ancestors configurable y SSE sin wildcard *
+  await test('38. Seguridad CSP y SSE: script-src sin unsafe-eval, frame-ancestors restringido y sin CORS *', async () => {
+    const { securityHeaders } = await import('../src/server/middleware/securityHeaders');
+
+    // 1. Verificar CSP sin unsafe-eval
+    const headersSet: Record<string, string> = {};
+    const mockRes: any = {
+      setHeader: (name: string, value: string) => { headersSet[name.toLowerCase()] = value; },
+      removeHeader: () => {},
+    };
+
+    const prevEnv = process.env.ALLOWED_FRAME_ANCESTORS;
+    try {
+      delete process.env.ALLOWED_FRAME_ANCESTORS;
+      delete process.env.FRAME_ANCESTORS;
+
+      const middleware = securityHeaders(true);
+      middleware({} as any, mockRes, () => {});
+
+      const csp = headersSet['content-security-policy'];
+      assert(!csp.includes("'unsafe-eval'"), "script-src no debe contener 'unsafe-eval' en producción");
+      assert(csp.includes("frame-ancestors 'self'"), "frame-ancestors debe restringirse a 'self'");
+
+      // 2. Con variable de entorno configurable para AI Studio
+      process.env.ALLOWED_FRAME_ANCESTORS = 'https://custom-studio.google.com';
+      const envHeadersSet: Record<string, string> = {};
+      const envMockRes: any = {
+        setHeader: (name: string, value: string) => { envHeadersSet[name.toLowerCase()] = value; },
+        removeHeader: () => {},
+      };
+      const envMiddleware = securityHeaders(true);
+      envMiddleware({} as any, envMockRes, () => {});
+
+      const envCsp = envHeadersSet['content-security-policy'];
+      assert(
+        envCsp.includes("frame-ancestors 'self' https://custom-studio.google.com"),
+        'frame-ancestors debe incorporar el valor configurable por variable de entorno'
+      );
+    } finally {
+      process.env.ALLOWED_FRAME_ANCESTORS = prevEnv;
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

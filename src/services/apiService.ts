@@ -42,9 +42,11 @@ export interface SystemHealthReport {
 }
 
 class ApiService {
-  private eventSource: EventSource | null = null;
+  private sseAbortController: AbortController | null = null;
   private sseConnected: boolean = false;
   private sseListeners: Set<(event: any) => void> = new Set();
+  private sseReconnectTimeout: any = null;
+  private sseReconnectAttempts: number = 0;
   private authToken: string | null = null;
 
   constructor() {
@@ -82,61 +84,140 @@ class ApiService {
   public initSSE() {
     if (typeof window === 'undefined') return;
 
-    if (this.eventSource) {
-      this.eventSource.close();
+    if (this.sseAbortController) {
+      this.sseAbortController.abort();
+      this.sseAbortController = null;
+    }
+    if (this.sseReconnectTimeout) {
+      clearTimeout(this.sseReconnectTimeout);
+      this.sseReconnectTimeout = null;
     }
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const overlayToken = urlParams.get('token') || urlParams.get('overlayToken');
+      const overlayToken = urlParams.get('overlayToken');
 
       let streamUrl = '/api/events/stream';
-      if (this.authToken) {
-        streamUrl += `?token=${encodeURIComponent(this.authToken)}`;
-      } else if (overlayToken) {
+      // Permite únicamente overlayToken por query para OBS (solo lectura)
+      if (!this.authToken && overlayToken) {
         streamUrl += `?overlayToken=${encodeURIComponent(overlayToken)}`;
       }
 
-      this.eventSource = new EventSource(streamUrl);
-
-      this.eventSource.onopen = () => {
-        this.sseConnected = true;
+      const headers: Record<string, string> = {
+        'Accept': 'text/event-stream',
       };
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
 
-      this.eventSource.onmessage = (event) => {
+      const controller = new AbortController();
+      this.sseAbortController = controller;
+
+      const startStream = async () => {
         try {
-          const data = JSON.parse(event.data);
+          const response = await fetch(streamUrl, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+          });
 
-          if (data.type === 'TRIGGER_ACTION') {
-            const p = data.payload;
-            if (p.actionType === 'overlay_effect') {
-              eventBus.broadcast({
-                type: 'TRIGGER_OVERLAY',
-                payload: {
-                  effect: p.effect,
-                  event: p.event,
-                  formattedTitle: p.formattedTitle,
-                  formattedSubtitle: p.formattedSubtitle,
-                  ttsVoiceText: p.ttsVoiceText,
-                  timestamp: data.timestamp,
-                },
-              });
-            }
-          } else if (data.type === 'TIKTOK_EVENT') {
-            eventBus.broadcast({
-              type: 'TIKTOK_EVENT_RECEIVED',
-              payload: data.payload,
-            });
+          if (!response.ok) {
+            throw new Error(`SSE stream error: HTTP ${response.status}`);
           }
 
-          this.sseListeners.forEach((cb) => cb(data));
-        } catch {}
+          if (!response.body) {
+            throw new Error('ReadableStream no disponible en respuesta');
+          }
+
+          this.sseConnected = true;
+          this.sseReconnectAttempts = 0;
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const chunks = buffer.split('\n\n');
+            buffer = chunks.pop() || '';
+
+            for (const chunk of chunks) {
+              const trimmed = chunk.trim();
+              if (!trimmed || trimmed.startsWith(':')) continue; // Heartbeat comment
+
+              for (const line of trimmed.split('\n')) {
+                if (line.startsWith('data:')) {
+                  const dataStr = line.replace(/^data:\s*/, '').trim();
+                  if (!dataStr) continue;
+                  try {
+                    const data = JSON.parse(dataStr);
+                    this.handleSSEEvent(data);
+                  } catch {}
+                }
+              }
+            }
+          }
+        } catch (err: any) {
+          if (err.name === 'AbortError') return;
+        } finally {
+          this.sseConnected = false;
+          if (!controller.signal.aborted) {
+            this.sseReconnectAttempts++;
+            const backoffDelay = Math.min(30000, 1000 * Math.pow(2, Math.min(this.sseReconnectAttempts - 1, 5)));
+            this.sseReconnectTimeout = setTimeout(() => {
+              if (!controller.signal.aborted) {
+                this.initSSE();
+              }
+            }, backoffDelay);
+          }
+        }
       };
 
-      this.eventSource.onerror = () => {
-        this.sseConnected = false;
-      };
+      startStream();
     } catch {}
+  }
+
+  private handleSSEEvent(data: any) {
+    if (data.type === 'TRIGGER_ACTION') {
+      const p = data.payload;
+      if (p.actionType === 'overlay_effect') {
+        eventBus.broadcast({
+          type: 'TRIGGER_OVERLAY',
+          payload: {
+            effect: p.effect,
+            event: p.event,
+            formattedTitle: p.formattedTitle,
+            formattedSubtitle: p.formattedSubtitle,
+            ttsVoiceText: p.ttsVoiceText,
+            timestamp: data.timestamp,
+          },
+        });
+      }
+    } else if (data.type === 'TIKTOK_EVENT') {
+      eventBus.broadcast({
+        type: 'TIKTOK_EVENT_RECEIVED',
+        payload: data.payload,
+      });
+    }
+
+    this.sseListeners.forEach((cb) => cb(data));
+  }
+
+  public isSseConnected(): boolean {
+    return this.sseConnected;
+  }
+
+  public async getOverlayState(overlayToken: string): Promise<any> {
+    try {
+      const res = await fetch(`/api/overlay/state?overlayToken=${encodeURIComponent(overlayToken)}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
   }
 
   public onSSEMessage(cb: (data: any) => void): () => void {

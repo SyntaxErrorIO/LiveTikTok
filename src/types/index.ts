@@ -214,4 +214,5 @@ export interface AppSettings {
   defaultOverlayDurationMs: number;
   preferredTtsVoice?: string;
   historyRetentionCount: number;
+  goalTargetDiamonds?: number;
 }

@@ -244,6 +244,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   globalRateLimitPerMinute: 60,
   defaultOverlayDurationMs: 4500,
   historyRetentionCount: 300,
+  goalTargetDiamonds: 500,
 };
 
 export const DEFAULT_CONNECTION: ConnectionConfig = {
@@ -264,7 +265,7 @@ export const DEFAULT_COUNTERS: StreamCounter[] = [
   {
     id: 'cnt-diamonds',
     name: 'Meta de Diamantes',
-    current: 320,
+    current: 0,
     target: 500,
     unit: '💎',
     lastUpdated: Date.now(),
@@ -272,39 +273,14 @@ export const DEFAULT_COUNTERS: StreamCounter[] = [
   {
     id: 'cnt-likes',
     name: 'Meta de Likes',
-    current: 14200,
+    current: 0,
     target: 20000,
     unit: '❤️',
     lastUpdated: Date.now(),
   },
 ];
 
-export const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [
-  {
-    userId: '1',
-    username: 'AstroVIP',
-    nickname: 'Astro VIP',
-    points: 1250,
-    giftsCount: 14,
-    lastUpdated: Date.now(),
-  },
-  {
-    userId: '2',
-    username: 'RosaFan',
-    nickname: 'Rosa Fan',
-    points: 680,
-    giftsCount: 22,
-    lastUpdated: Date.now(),
-  },
-  {
-    userId: '3',
-    username: 'LionKing',
-    nickname: 'Rey León',
-    points: 500,
-    giftsCount: 3,
-    lastUpdated: Date.now(),
-  },
-];
+export const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [];
 
 export class StorageService {
   public static getRules(): AutomationRule[] {

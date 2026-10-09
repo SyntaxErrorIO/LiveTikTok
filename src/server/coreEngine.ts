@@ -350,6 +350,12 @@ export class CoreAutomationEngine {
 
     StateStore.saveRules(rules, targetUserId);
 
+    // 3. Update persistent gift stats (diamonds counter and top donors) in StateStore for OBS overlay
+    if (event.type === 'gift' && event.data?.diamondCount) {
+      const diamonds = (event.data.diamondCount || 1) * (event.data.repeatCount || 1);
+      this.recordGiftStats(event, diamonds, targetUserId);
+    }
+
     const execTime = Math.max(1, Math.round(performance.now() - startTime));
     this.totalProcessed++;
 
@@ -394,6 +400,63 @@ export class CoreAutomationEngine {
       },
       targetUserId
     );
+  }
+
+  private recordGiftStats(event: TikTokEvent, diamonds: number, targetUserId?: string) {
+    try {
+      // 1. Update diamonds counter
+      const counters = StateStore.getCounters(targetUserId);
+      const diamondCounter = counters.find(
+        (c) => c.name.toLowerCase().includes('diamante') || c.id.toLowerCase().includes('diamond')
+      );
+      if (diamondCounter) {
+        diamondCounter.current = (diamondCounter.current || 0) + diamonds;
+        diamondCounter.lastUpdated = Date.now();
+        StateStore.saveCounters(counters, targetUserId);
+        this.broadcast(
+          {
+            type: 'COUNTERS_UPDATED',
+            payload: counters,
+            timestamp: Date.now(),
+          },
+          targetUserId
+        );
+      }
+
+      // 2. Update Leaderboard (top donors)
+      const leaderboard = StateStore.getLeaderboard(targetUserId);
+      const donorUser = event.user.username;
+      let entry = leaderboard.find((l) => l.username === donorUser || l.userId === event.user.id);
+      if (!entry) {
+        entry = {
+          userId: event.user.id || donorUser,
+          username: donorUser,
+          nickname: event.user.nickname || donorUser,
+          points: diamonds,
+          giftsCount: event.data.repeatCount || 1,
+          lastUpdated: Date.now(),
+        };
+        leaderboard.push(entry);
+      } else {
+        entry.points += diamonds;
+        entry.giftsCount += event.data.repeatCount || 1;
+        entry.lastUpdated = Date.now();
+      }
+
+      leaderboard.sort((a, b) => b.points - a.points);
+      const topLeaderboard = leaderboard.slice(0, 50);
+      StateStore.saveLeaderboard(topLeaderboard, targetUserId);
+      this.broadcast(
+        {
+          type: 'LEADERBOARD_UPDATED',
+          payload: topLeaderboard,
+          timestamp: Date.now(),
+        },
+        targetUserId
+      );
+    } catch (err: any) {
+      SystemLogger.error('ENGINE', `Error actualizando estadísticas de regalo: ${err?.message}`);
+    }
   }
 
   // Connection management via decoupled ITikTokConnector (multi-user isolated)

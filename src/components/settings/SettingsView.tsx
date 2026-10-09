@@ -114,7 +114,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const getFullOverlayUrl = () => {
     const base = typeof window !== 'undefined' ? window.location.origin : 'https://tu-dominio.com';
-    return `${base}/?mode=overlay${overlayToken ? `&token=${overlayToken}` : ''}`;
+    return `${base}/?mode=overlay${overlayToken ? `&overlayToken=${overlayToken}` : ''}`;
   };
 
   const handleCopyOverlayUrl = () => {
@@ -123,11 +123,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setCopiedOverlayUrl(false), 2000);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onUpdateSettings(formData);
     StorageService.saveSettings(formData);
+    await apiService.saveSettings(formData);
     audioEngine.setMasterVolume(formData.masterVolume);
-    setNotice('Preferencias guardadas correctamente.');
+    setNotice('Preferencias guardadas y sincronizadas con el servidor correctamente.');
     setTimeout(() => setNotice(null), 3000);
   };
 
@@ -327,6 +328,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 }
                 className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono"
               />
+            </div>
+
+            <div>
+              <label className="block text-slate-300 mb-1">
+                Objetivo de Meta de Diamantes (Barra de Meta en OBS)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="1000000"
+                value={formData.goalTargetDiamonds ?? 500}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    goalTargetDiamonds: Math.max(1, Number(e.target.value)),
+                  })
+                }
+                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Define el número de diamantes objetivo que se mostrará en la barra de progreso del overlay de OBS.
+              </p>
             </div>
           </div>
         </div>

@@ -44,11 +44,16 @@ router.get('/stream', (req: Request, res: Response) => {
   const targetUserId = user ? user.userId : overlayUser?.id;
   const isAdmin = user?.role === 'admin';
 
+  const requestOrigin = (req.headers.origin as string)?.trim();
+  const configuredAppUrl = process.env.APP_URL?.trim();
+  const allowedOrigin = requestOrigin || configuredAppUrl || 'http://localhost:3000';
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Vary': 'Origin',
   });
 
   res.write(`data: ${JSON.stringify({ type: 'CONNECTED', userId: targetUserId, timestamp: Date.now() })}\n\n`);
