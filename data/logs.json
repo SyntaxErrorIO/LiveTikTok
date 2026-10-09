@@ -1,0 +1,27 @@
+[
+  {
+    "id": "log-iyx0gwf",
+    "eventId": "evt-gift-1791512086055-r4s7j",
+    "eventTimestamp": 1791512086055,
+    "source": "real_tiktok",
+    "eventType": "gift",
+    "eventSummary": "5x Rosa (1 💎)",
+    "senderName": "Carlos",
+    "matchedRules": [
+      {
+        "ruleId": "rule-galaxy-legend",
+        "ruleName": "Alerta Legendaria: Galaxia / León (>500 💎)",
+        "executedActionsCount": 0,
+        "status": "condition_failed"
+      },
+      {
+        "ruleId": "rule-roses-shower",
+        "ruleName": "Racha de Rosas & Regalos Menores",
+        "executedActionsCount": 2,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 2
+  }
+]

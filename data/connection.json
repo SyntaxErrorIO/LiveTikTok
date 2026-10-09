@@ -1,0 +1,13 @@
+{
+  "mode": "simulation",
+  "status": "connected",
+  "username": "streamer_live_pro",
+  "roomId": "7412984920491029381",
+  "bridgeServerUrl": "ws://localhost:21213",
+  "autoReconnect": true,
+  "connectedAt": 1791508476330,
+  "lastActivityAt": 1791512086056,
+  "viewerCount": 1420,
+  "likeTotal": 28450,
+  "pingMs": 18
+}

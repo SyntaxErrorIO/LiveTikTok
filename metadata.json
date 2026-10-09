@@ -1,0 +1,6 @@
+{
+  "name": "LiveTrigger AI",
+  "description": "Plataforma profesional de automatización para TikTok LIVE y streaming con motor de reglas en tiempo real, efectos visuales y simulador interactivo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

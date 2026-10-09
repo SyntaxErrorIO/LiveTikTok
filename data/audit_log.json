@@ -1,0 +1,43 @@
+[
+  {
+    "id": "aud-mv0daw11-lrtag",
+    "timestamp": 1791514205605,
+    "level": "INFO",
+    "category": "BACKUP",
+    "message": "Copia de seguridad creada: snap-mv0daw10-yhsu",
+    "details": {
+      "reason": "Test Snapshot",
+      "fileName": "snapshot_snap-mv0daw10-yhsu_1791514205605.json"
+    }
+  },
+  {
+    "id": "aud-mv0damy2-2lcup",
+    "timestamp": 1791514193834,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "Recuperación automática tras reinicio: reconectando proveedor...",
+    "details": {
+      "mode": "simulation",
+      "channel": "streamer_live_pro"
+    }
+  },
+  {
+    "id": "aud-mv0damy2-464rn",
+    "timestamp": 1791514193834,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "LiveTrigger AI iniciado en puerto 3000 (DESARROLLO)"
+  },
+  {
+    "id": "aud-mv0dama9-bhnsc",
+    "timestamp": 1791514192977,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Cuenta administrativa inicial creada",
+    "userId": "usr-admin-primary",
+    "details": {
+      "email": "admin@livetrigger.local",
+      "note": "Credenciales iniciales creadas desde variables de entorno."
+    }
+  }
+]

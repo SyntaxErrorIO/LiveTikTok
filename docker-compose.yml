@@ -1,0 +1,30 @@
+services:
+  livetrigger-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livetrigger-ai
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-cambia_esta_clave_secreta_por_una_muy_segura}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@livetrigger.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-LiveTrigger2026!}
+      - TIKTOK_WEBHOOK_SECRET=${TIKTOK_WEBHOOK_SECRET:-}
+      - DATA_DIR=/app/data
+    volumes:
+      - livetrigger_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  livetrigger_data:
+    driver: local
