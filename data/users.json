@@ -1,0 +1,35 @@
+[
+  {
+    "id": "usr-admin-primary",
+    "username": "admin",
+    "email": "admin@livetrigger.local",
+    "role": "admin",
+    "passwordHash": "48062f489b6ad59a0a87779148491ba9702a57183ce7249ec3af56218076ea4a9c31705522c497fbce44122cc9509f9d1178c0ef6985eb397f16d5b26d0438e2",
+    "passwordSalt": "383a50b3e78399ec04d9179ec7a60d73",
+    "overlayToken": "1f8e3042ce62dd3dd0e14e1387dcaaed75eeb503fff0dfb3",
+    "createdAt": 1791514192977,
+    "lastLoginAt": 1791514192977
+  },
+  {
+    "id": "usr-mv0ed500-5vm2b",
+    "username": "creator_test_mv0ed4yg",
+    "email": "creator_1791515990104@streamer.test",
+    "role": "streamer",
+    "passwordHash": "9729e4cb103c405c157ffa424956bb7b14f54e15f7c5608d9676f99c0a4dcf144cfd10fefe374346c64dd8097d44cefe05545bc555a219e3187b54276c5ebe33",
+    "passwordSalt": "c12ef7f53753c058a89411e916478fba",
+    "overlayToken": "9b6893e421291113af77054313acad391b13ff5bc30f219a",
+    "createdAt": 1791515990160,
+    "lastLoginAt": 1791515990218
+  },
+  {
+    "id": "usr-mv0eelig-t1a5h",
+    "username": "streamer_live",
+    "email": "streamer_live@test.com",
+    "role": "streamer",
+    "passwordHash": "f868d1ddbc71cc08c60b1a9978d1fcff98ccd66782dbcd592ac7c12e81e8357af38e313c796df234cfbb8ef6741ce27131cf40e4b8d17cd7052d508ae45a12da",
+    "passwordSalt": "83477945bdbcb55d1305409b654fabdd",
+    "overlayToken": "9c92a9ec5632c2ed4bb37e16259ddbb2d6871a6155facf8d",
+    "createdAt": 1791516058216,
+    "lastLoginAt": 1791516058216
+  }
+]

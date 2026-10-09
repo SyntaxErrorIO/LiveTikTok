@@ -49,11 +49,18 @@ const webhookLimiter = RateLimiter.createLimiter({
   category: 'WEBHOOK',
 });
 
-// User Session Extraction Middleware
+// User Session Extraction Middleware (Header or Query token for SSE/OBS)
 const extractUser = (req: Request, _res: Response, next: any) => {
   const authHeader = req.headers['authorization'];
+  let token: string | undefined;
+
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim();
+    token = authHeader.substring(7).trim();
+  } else if (typeof req.query.token === 'string' && req.query.token.trim()) {
+    token = req.query.token.trim();
+  }
+
+  if (token) {
     const session = AuthManager.verifyToken(token);
     if (session) {
       (req as any).user = session;
@@ -63,10 +70,57 @@ const extractUser = (req: Request, _res: Response, next: any) => {
 };
 app.use(extractUser);
 
+// Mandatory Authentication Middleware for Private Routes
+const requireAuth = (req: Request, res: Response, next: any) => {
+  if (!(req as any).user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Autenticación requerida. Proporcione un token de sesión válido.',
+    });
+  }
+  next();
+};
+
+// Mandatory Admin Authorization Middleware
+const requireAdmin = (req: Request, res: Response, next: any) => {
+  if (!(req as any).user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Autenticación requerida.',
+    });
+  }
+  if ((req as any).user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      error: 'Acceso denegado. Se requieren privilegios de administrador.',
+    });
+  }
+  next();
+};
+
 // -------------------------------------------------------------
-// REAL-TIME SERVER-SENT EVENTS (SSE) STREAM
+// REAL-TIME SERVER-SENT EVENTS (SSE) STREAM (AUTHENTICATED & ISOLATED)
 // -------------------------------------------------------------
 app.get('/api/events/stream', (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const overlayToken = (req.query.overlayToken as string) || (req.query.token as string);
+  let overlayUser: any = null;
+
+  if (overlayToken) {
+    overlayUser = AuthManager.getUserByOverlayToken(overlayToken);
+  }
+
+  // Must have authenticated user session or valid OBS overlay token
+  if (!user && !overlayUser) {
+    return res.status(401).json({
+      success: false,
+      error: 'Acceso no autorizado al canal de eventos SSE en tiempo real.',
+    });
+  }
+
+  const targetUserId = user ? user.userId : overlayUser?.id;
+  const isAdmin = user?.role === 'admin';
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -74,11 +128,16 @@ app.get('/api/events/stream', (req: Request, res: Response) => {
     'Access-Control-Allow-Origin': '*',
   });
 
-  res.write(`data: ${JSON.stringify({ type: 'CONNECTED', timestamp: Date.now() })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: 'CONNECTED', userId: targetUserId, timestamp: Date.now() })}\n\n`);
 
-  const unsubscribe = coreEngine.subscribeSSE((msg: SSEBroadcastMessage) => {
-    res.write(`data: ${JSON.stringify(msg)}\n\n`);
-  });
+  const unsubscribe = coreEngine.subscribeSSE(
+    (msg: SSEBroadcastMessage) => {
+      res.write(`data: ${JSON.stringify(msg)}\n\n`);
+    },
+    targetUserId,
+    overlayToken,
+    isAdmin
+  );
 
   // Heartbeat to keep connection open through proxies
   const heartbeat = setInterval(() => {
@@ -196,7 +255,7 @@ app.get('/api/system/fail-safe', (_req: Request, res: Response) => {
   return res.json({ success: true, failSafe: FailSafeManager.getStatus() });
 });
 
-app.post('/api/system/fail-safe/reset', (req: Request, res: Response) => {
+app.post('/api/system/fail-safe/reset', requireAuth, (req: Request, res: Response) => {
   const reason = req.body?.reason || 'Restablecimiento manual por el usuario';
   const status = FailSafeManager.reset(reason);
   coreEngine.broadcast({
@@ -207,45 +266,46 @@ app.post('/api/system/fail-safe/reset', (req: Request, res: Response) => {
   return res.json({ success: true, failSafe: status });
 });
 
-app.get('/api/system/audit', (_req: Request, res: Response) => {
+app.get('/api/system/audit', requireAdmin, (_req: Request, res: Response) => {
   return res.json({ success: true, logs: SystemLogger.getLogs(150) });
 });
 
 // -------------------------------------------------------------
 // BACKUP, SNAPSHOTS & RESTORE API
 // -------------------------------------------------------------
-app.get('/api/backup/export', (req: Request, res: Response) => {
+app.get('/api/backup/export', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
-  const jsonStr = StateStore.exportFullConfigJson(user?.userId);
+  const jsonStr = StateStore.exportFullConfigJson(user.userId);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename=livetrigger_backup_${Date.now()}.json`);
   return res.send(jsonStr);
 });
 
-app.post('/api/backup/import', (req: Request, res: Response) => {
+app.post('/api/backup/import', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { json } = req.body;
   if (!json || typeof json !== 'string') {
     return res.status(400).json({ success: false, error: 'Cadena JSON no proporcionada.' });
   }
-  const ok = StateStore.importFullConfigJson(json, user?.userId);
+  const ok = StateStore.importFullConfigJson(json, user.userId);
   return res.json({ success: ok });
 });
 
-app.get('/api/backup/snapshots', (_req: Request, res: Response) => {
-  return res.json({ success: true, snapshots: StateStore.listSnapshots() });
+app.get('/api/backup/snapshots', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  return res.json({ success: true, snapshots: StateStore.listSnapshots(user.userId, user.role === 'admin') });
 });
 
-app.post('/api/backup/snapshots', (req: Request, res: Response) => {
+app.post('/api/backup/snapshots', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
   const reason = req.body?.reason || 'Snapshot manual';
-  const snapshot = StateStore.createSnapshot(user?.userId, reason);
+  const snapshot = StateStore.createSnapshot(user.userId, reason);
   return res.json({ success: true, snapshot });
 });
 
-app.post('/api/backup/restore/:fileName', (req: Request, res: Response) => {
+app.post('/api/backup/restore/:fileName', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
-  const ok = StateStore.restoreSnapshot(req.params.fileName, user?.userId);
+  const ok = StateStore.restoreSnapshot(req.params.fileName, user.userId, user.role === 'admin');
   return res.json({ success: ok });
 });
 
@@ -266,29 +326,38 @@ app.post('/api/events/webhook', webhookLimiter, async (req: Request, res: Respon
     }
   }
 
-  const result = await coreEngine.ingestRawEvent(req.body, 'real_tiktok');
+  const targetUserId =
+    (req.headers['x-user-id'] as string) ||
+    (req.query.userId as string) ||
+    (req as any).user?.userId ||
+    'usr-admin-primary';
+
+  const result = await coreEngine.ingestRawEvent(req.body, 'real_tiktok', targetUserId);
   return res.status(result.accepted ? 200 : 400).json(result);
 });
 
-app.post('/api/events/simulate', webhookLimiter, async (req: Request, res: Response) => {
-  const result = await coreEngine.ingestRawEvent(req.body, 'simulation');
+app.post('/api/events/simulate', requireAuth, webhookLimiter, async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const result = await coreEngine.ingestRawEvent(req.body, 'simulation', user.userId);
   return res.json(result);
 });
 
 // -------------------------------------------------------------
-// RULES CRUD API (WITH PERSISTENCE & SECURITY VALIDATION)
+// RULES CRUD API (AUTHENTICATED & ISOLATED PER CREATOR)
 // -------------------------------------------------------------
-app.get('/api/rules', (_req: Request, res: Response) => {
-  res.json({ success: true, rules: StateStore.getRules() });
+app.get('/api/rules', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, rules: StateStore.getRules(user.userId) });
 });
 
-app.post('/api/rules', (req: Request, res: Response) => {
+app.post('/api/rules', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
   const validation = SecurityValidator.validateRule(req.body);
   if (!validation.valid || !validation.sanitized) {
     return res.status(400).json({ success: false, error: validation.error });
   }
 
-  const rules = StateStore.getRules();
+  const rules = StateStore.getRules(user.userId);
   const existingIndex = rules.findIndex((r) => r.id === validation.sanitized!.id);
 
   if (existingIndex >= 0) {
@@ -297,131 +366,153 @@ app.post('/api/rules', (req: Request, res: Response) => {
     rules.unshift(validation.sanitized);
   }
 
-  StateStore.saveRules(rules);
+  StateStore.saveRules(rules, user.userId);
   return res.json({ success: true, rule: validation.sanitized });
 });
 
-app.delete('/api/rules/:id', (req: Request, res: Response) => {
-  const rules = StateStore.getRules().filter((r) => r.id !== req.params.id);
-  StateStore.saveRules(rules);
+app.delete('/api/rules/:id', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const rules = StateStore.getRules(user.userId).filter((r) => r.id !== req.params.id);
+  StateStore.saveRules(rules, user.userId);
   res.json({ success: true });
 });
 
-app.post('/api/rules/:id/toggle', (req: Request, res: Response) => {
-  const rules = StateStore.getRules();
+app.post('/api/rules/:id/toggle', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const rules = StateStore.getRules(user.userId);
   const target = rules.find((r) => r.id === req.params.id);
   if (target) {
     target.enabled = !target.enabled;
-    StateStore.saveRules(rules);
+    StateStore.saveRules(rules, user.userId);
     return res.json({ success: true, rule: target });
   }
   return res.status(404).json({ success: false, error: 'Regla no encontrada.' });
 });
 
 // -------------------------------------------------------------
-// CONNECTION API
+// CONNECTION API (ISOLATED PER CREATOR)
 // -------------------------------------------------------------
-app.get('/api/connection', (_req: Request, res: Response) => {
-  res.json({ success: true, connection: StateStore.getConnection() });
+app.get('/api/connection', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, connection: StateStore.getConnection(user.userId) });
 });
 
-app.post('/api/connection/mode', (req: Request, res: Response) => {
+app.post('/api/connection/mode', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
   const { mode } = req.body;
   if (mode !== 'simulation' && mode !== 'real_tiktok') {
     return res.status(400).json({ success: false, error: 'Modo inválido.' });
   }
 
-  const conn = StateStore.getConnection();
+  const conn = StateStore.getConnection(user.userId);
   conn.mode = mode;
   conn.status = 'disconnected';
-  StateStore.saveConnection(conn);
-  coreEngine.disconnect();
+  StateStore.saveConnection(conn, user.userId);
+  coreEngine.disconnect(user.userId);
 
   return res.json({ success: true, connection: conn });
 });
 
-app.post('/api/connection/connect', async (_req: Request, res: Response) => {
-  const success = await coreEngine.connect();
-  res.json({ success, connection: StateStore.getConnection() });
+app.post('/api/connection/connect', requireAuth, async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const success = await coreEngine.connect(user.userId);
+  res.json({ success, connection: StateStore.getConnection(user.userId) });
 });
 
-app.post('/api/connection/disconnect', (_req: Request, res: Response) => {
-  coreEngine.disconnect();
-  res.json({ success: true, connection: StateStore.getConnection() });
+app.post('/api/connection/disconnect', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  coreEngine.disconnect(user.userId);
+  res.json({ success: true, connection: StateStore.getConnection(user.userId) });
 });
 
 // -------------------------------------------------------------
-// COUNTERS & LEADERBOARD API
+// COUNTERS & LEADERBOARD API (ISOLATED PER CREATOR)
 // ---------------------------------------------
-app.get('/api/counters', (_req: Request, res: Response) => {
-  res.json({ success: true, counters: StateStore.getCounters() });
+app.get('/api/counters', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, counters: StateStore.getCounters(user.userId) });
 });
 
-app.post('/api/counters/:id/reset', (req: Request, res: Response) => {
-  const counters = StateStore.getCounters();
+app.post('/api/counters/:id/reset', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const counters = StateStore.getCounters(user.userId);
   const counter = counters.find((c) => c.id === req.params.id);
   if (counter) {
     counter.current = 0;
     counter.lastUpdated = Date.now();
-    StateStore.saveCounters(counters);
-    coreEngine.broadcast({
-      type: 'COUNTERS_UPDATED',
-      payload: counters,
-      timestamp: Date.now(),
-    });
+    StateStore.saveCounters(counters, user.userId);
+    coreEngine.broadcast(
+      {
+        type: 'COUNTERS_UPDATED',
+        payload: counters,
+        timestamp: Date.now(),
+      },
+      user.userId
+    );
     return res.json({ success: true, counter });
   }
   return res.status(404).json({ success: false, error: 'Contador no encontrado' });
 });
 
-app.get('/api/leaderboard', (_req: Request, res: Response) => {
-  res.json({ success: true, leaderboard: StateStore.getLeaderboard() });
+app.get('/api/leaderboard', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, leaderboard: StateStore.getLeaderboard(user.userId) });
 });
 
-app.post('/api/leaderboard/reset', (_req: Request, res: Response) => {
-  StateStore.saveLeaderboard([]);
-  coreEngine.broadcast({
-    type: 'LEADERBOARD_UPDATED',
-    payload: [],
-    timestamp: Date.now(),
-  });
+app.post('/api/leaderboard/reset', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  StateStore.saveLeaderboard([], user.userId);
+  coreEngine.broadcast(
+    {
+      type: 'LEADERBOARD_UPDATED',
+      payload: [],
+      timestamp: Date.now(),
+    },
+    user.userId
+  );
   res.json({ success: true });
 });
 
 // -------------------------------------------------------------
-// LOGS & TELEMETRY API
+// LOGS & TELEMETRY API (ISOLATED PER CREATOR)
 // -------------------------------------------------------------
-app.get('/api/logs', (_req: Request, res: Response) => {
-  res.json({ success: true, logs: StateStore.getLogs() });
+app.get('/api/logs', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, logs: StateStore.getLogs(user.userId) });
 });
 
-app.delete('/api/logs', (_req: Request, res: Response) => {
-  StateStore.clearLogs();
+app.delete('/api/logs', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  StateStore.clearLogs(user.userId);
   res.json({ success: true });
 });
 
-app.get('/api/engine/stats', (_req: Request, res: Response) => {
-  res.json({ success: true, stats: coreEngine.getStats() });
+app.get('/api/engine/stats', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, stats: coreEngine.getStats(user.userId) });
 });
 
 // -------------------------------------------------------------
-// SETTINGS & MASTER SWITCH
+// SETTINGS & MASTER SWITCH (ISOLATED PER CREATOR)
 // -------------------------------------------------------------
-app.get('/api/settings', (_req: Request, res: Response) => {
-  res.json({ success: true, settings: StateStore.getSettings() });
+app.get('/api/settings', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  res.json({ success: true, settings: StateStore.getSettings(user.userId) });
 });
 
-app.post('/api/settings', (req: Request, res: Response) => {
-  const current = StateStore.getSettings();
+app.post('/api/settings', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const current = StateStore.getSettings(user.userId);
   const updated = { ...current, ...req.body };
-  StateStore.saveSettings(updated);
-  coreEngine.setMasterAutomation(updated.masterAutomationEnabled);
+  StateStore.saveSettings(updated, user.userId);
+  coreEngine.setMasterAutomation(updated.masterAutomationEnabled, user.userId);
   res.json({ success: true, settings: updated });
 });
 
-app.post('/api/settings/pause', (req: Request, res: Response) => {
+app.post('/api/settings/pause', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
   const { enabled } = req.body;
-  coreEngine.setMasterAutomation(Boolean(enabled));
+  coreEngine.setMasterAutomation(Boolean(enabled), user.userId);
   res.json({ success: true, enabled: Boolean(enabled) });
 });
 
@@ -647,7 +738,8 @@ app.post('/api/tests/run', async (_req: Request, res: Response) => {
 });
 
 // Endpoint para disparar eventos ficticios predefinidos para pruebas de OBS y alertas
-app.post('/api/tests/mock-event', async (req: Request, res: Response) => {
+app.post('/api/tests/mock-event', requireAuth, async (req: Request, res: Response) => {
+  const user = (req as any).user;
   const { preset } = req.body;
   let mockEvent: any;
 
@@ -702,15 +794,16 @@ app.post('/api/tests/mock-event', async (req: Request, res: Response) => {
       };
   }
 
-  const result = await coreEngine.ingestRawEvent(mockEvent, 'simulation');
+  const result = await coreEngine.ingestRawEvent(mockEvent, 'simulation', user.userId);
   return res.json({ success: result.accepted, result, preset });
 });
 
 // Endpoint para simular desconexión imprevista y verificar comportamiento del sistema
-app.post('/api/connection/disconnect-simulate', (req: Request, res: Response) => {
+app.post('/api/connection/disconnect-simulate', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
   const reason = req.body?.reason || 'Corte de socket simulado para prueba de reconexión';
-  coreEngine.simulateProviderDisconnect(reason);
-  res.json({ success: true, reason, connection: StateStore.getConnection() });
+  coreEngine.simulateProviderDisconnect(reason, user.userId);
+  res.json({ success: true, reason, connection: StateStore.getConnection(user.userId) });
 });
 
 // -------------------------------------------------------------

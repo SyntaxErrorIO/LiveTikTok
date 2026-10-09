@@ -1,5 +1,99 @@
 [
   {
+    "id": "aud-mv0eelih-4l0xn",
+    "timestamp": 1791516058217,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0eelig-t1a5h",
+    "details": {
+      "username": "streamer_live",
+      "email": "streamer_live@test.com"
+    }
+  },
+  {
+    "id": "aud-mv0ee6yh-lz12r",
+    "timestamp": 1791516039353,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "Recuperación automática tras reinicio: reconectando proveedor...",
+    "details": {
+      "mode": "simulation",
+      "channel": "streamer_live_pro"
+    }
+  },
+  {
+    "id": "aud-mv0ee6yh-f5kav",
+    "timestamp": 1791516039353,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "LiveTrigger AI iniciado en puerto 3000 (DESARROLLO)"
+  },
+  {
+    "id": "aud-mv0ed538-vxj6c",
+    "timestamp": 1791515990276,
+    "level": "INFO",
+    "category": "BACKUP",
+    "message": "Copia de seguridad creada: snap-mv0ed537-ew79",
+    "userId": "user-creator-alpha",
+    "details": {
+      "reason": "Snapshot Alpha",
+      "fileName": "snapshot_snap-mv0ed537-ew79_1791515990276.json"
+    }
+  },
+  {
+    "id": "aud-mv0ed535-sdibb",
+    "timestamp": 1791515990273,
+    "level": "WARN",
+    "category": "AUTH",
+    "message": "Intento de inicio de sesión fallido: contraseña incorrecta",
+    "userId": "usr-mv0ed500-5vm2b",
+    "details": {
+      "identifier": "creator_1791515990104@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0ed51m-cdxip",
+    "timestamp": 1791515990218,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Inicio de sesión exitoso",
+    "userId": "usr-mv0ed500-5vm2b",
+    "details": {
+      "username": "creator_test_mv0ed4yg"
+    }
+  },
+  {
+    "id": "aud-mv0ed501-6l88j",
+    "timestamp": 1791515990161,
+    "level": "INFO",
+    "category": "AUTH",
+    "message": "Nuevo usuario registrado exitosamente",
+    "userId": "usr-mv0ed500-5vm2b",
+    "details": {
+      "username": "creator_test_mv0ed4yg",
+      "email": "creator_1791515990104@streamer.test"
+    }
+  },
+  {
+    "id": "aud-mv0db92r-58ekk",
+    "timestamp": 1791514222515,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "Recuperación automática tras reinicio: reconectando proveedor...",
+    "details": {
+      "mode": "simulation",
+      "channel": "streamer_live_pro"
+    }
+  },
+  {
+    "id": "aud-mv0db92q-pw03v",
+    "timestamp": 1791514222514,
+    "level": "INFO",
+    "category": "ENGINE",
+    "message": "LiveTrigger AI iniciado en puerto 3000 (DESARROLLO)"
+  },
+  {
     "id": "aud-mv0daw11-lrtag",
     "timestamp": 1791514205605,
     "level": "INFO",

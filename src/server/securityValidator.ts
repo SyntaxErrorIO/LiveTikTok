@@ -79,11 +79,14 @@ export class SecurityValidator {
       return { valid: false, error: `Tipo de acción no admitido: ${action.type}` };
     }
 
-    // Safety checks for Webhooks & IoT Device Orders
+    // Safety checks for Webhooks & IoT Device Orders with strict SSRF prevention
     if (action.type === 'iot_device_order' || action.type === 'webhook_post') {
       const url = String(action.deviceEndpoint || action.webhookUrl || '').trim();
-      if (url && !/^https?:\/\//i.test(url)) {
-        return { valid: false, error: 'Las direcciones de dispositivos o webhooks deben comenzar con http:// o https://' };
+      if (url) {
+        const ssrfCheck = this.isSafeExternalUrl(url);
+        if (!ssrfCheck.safe) {
+          return { valid: false, error: ssrfCheck.reason || 'URL no permitida por razones de seguridad (prevención SSRF).' };
+        }
       }
     }
 
@@ -127,5 +130,128 @@ export class SecurityValidator {
     if (typeof cond.minSenderLevel === 'number') res.minSenderLevel = Math.max(0, cond.minSenderLevel);
     if (typeof cond.minLikeCount === 'number') res.minLikeCount = Math.max(1, cond.minLikeCount);
     return res;
+  }
+
+  /**
+   * SSRF Defense: Validates that a destination URL is a legitimate public web destination
+   * and blocks requests to loopback, internal networks, metadata endpoints, and non-HTTP protocols.
+   */
+  public static isSafeExternalUrl(urlStr: string): { safe: boolean; reason?: string } {
+    if (!urlStr || typeof urlStr !== 'string') {
+      return { safe: false, reason: 'URL no proporcionada.' };
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(urlStr);
+    } catch {
+      return { safe: false, reason: 'La URL proporcionada tiene un formato inválido.' };
+    }
+
+    // Scheme whitelist
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { safe: false, reason: 'Solo se permiten protocolos http:// y https://.' };
+    }
+
+    const rawHostname = parsed.hostname.toLowerCase().trim();
+
+    // Block empty hostname
+    if (!rawHostname) {
+      return { safe: false, reason: 'El nombre de host no puede estar vacío.' };
+    }
+
+    // Hostname blocklist
+    const blockedHosts = [
+      'localhost',
+      'metadata.google.internal',
+      'instance-data',
+      'metadata.internal',
+    ];
+    if (blockedHosts.includes(rawHostname)) {
+      return { safe: false, reason: 'Acceso a endpoints internos y metadatos bloqueado (SSRF).' };
+    }
+
+    if (
+      rawHostname.endsWith('.localhost') ||
+      rawHostname.endsWith('.local') ||
+      rawHostname.endsWith('.internal') ||
+      rawHostname.endsWith('.arpa')
+    ) {
+      return { safe: false, reason: 'Acceso a redes locales e internas bloqueado (SSRF).' };
+    }
+
+    // IPv6 checks
+    const ipv6 = rawHostname.startsWith('[') && rawHostname.endsWith(']')
+      ? rawHostname.slice(1, -1)
+      : rawHostname;
+
+    if (
+      ipv6 === '::1' ||
+      ipv6 === '::' ||
+      ipv6.startsWith('fe80:') ||
+      ipv6.startsWith('fc00:') ||
+      ipv6.startsWith('fd00:') ||
+      ipv6.includes('::ffff:127.') ||
+      ipv6.includes('::ffff:10.') ||
+      ipv6.includes('::ffff:192.168.') ||
+      ipv6.includes('::ffff:169.254.')
+    ) {
+      return { safe: false, reason: 'Dirección IPv6 interna o de bucle invertido bloqueada (SSRF).' };
+    }
+
+    // IPv4 dotted-decimal or decimal/hex integer checks
+    // Check if hostname is an IPv4 or numeric format
+    const ipv4Pattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+    const numMatch = rawHostname.match(ipv4Pattern);
+
+    if (numMatch) {
+      const oct1 = parseInt(numMatch[1], 10);
+      const oct2 = parseInt(numMatch[2], 10);
+      const oct3 = parseInt(numMatch[3], 10);
+      const oct4 = parseInt(numMatch[4], 10);
+
+      if (oct1 > 255 || oct2 > 255 || oct3 > 255 || oct4 > 255) {
+        return { safe: false, reason: 'Dirección IP inválida.' };
+      }
+
+      // 0.0.0.0/8
+      if (oct1 === 0) return { safe: false, reason: 'Rango 0.0.0.0/8 no permitido.' };
+
+      // 127.0.0.0/8 Loopback
+      if (oct1 === 127) return { safe: false, reason: 'Dirección de bucle invertido 127.0.0.0/8 bloqueada.' };
+
+      // 10.0.0.0/8 Private
+      if (oct1 === 10) return { safe: false, reason: 'Red privada RFC 1918 (10.0.0.0/8) bloqueada.' };
+
+      // 172.16.0.0/12 Private (172.16.x.x - 172.31.x.x)
+      if (oct1 === 172 && oct2 >= 16 && oct2 <= 31) {
+        return { safe: false, reason: 'Red privada RFC 1918 (172.16.0.0/12) bloqueada.' };
+      }
+
+      // 192.168.0.0/16 Private
+      if (oct1 === 192 && oct2 === 168) {
+        return { safe: false, reason: 'Red privada RFC 1918 (192.168.0.0/16) bloqueada.' };
+      }
+
+      // 169.254.0.0/16 Link-Local / Cloud Metadata (AWS/GCP/Azure)
+      if (oct1 === 169 && oct2 === 254) {
+        return { safe: false, reason: 'Endpoint de metadatos de nube (169.254.0.0/16) bloqueado.' };
+      }
+
+      // 100.64.0.0/10 Carrier-Grade NAT
+      if (oct1 === 100 && oct2 >= 64 && oct2 <= 127) {
+        return { safe: false, reason: 'Rango CGNAT (100.64.0.0/10) bloqueado.' };
+      }
+
+      // Multicast / Reserved
+      if (oct1 >= 224) {
+        return { safe: false, reason: 'Dirección multicast o reservada bloqueada.' };
+      }
+    } else if (/^\d+$/.test(rawHostname) || /^0x[0-9a-f]+$/i.test(rawHostname)) {
+      // Decimal or hex integer IP obfuscation (e.g. 2130706433 or 0x7f000001)
+      return { safe: false, reason: 'Representación numérica de IP no permitida.' };
+    }
+
+    return { safe: true };
   }
 }

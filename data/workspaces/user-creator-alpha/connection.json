@@ -5,9 +5,9 @@
   "roomId": "7412984920491029381",
   "bridgeServerUrl": "ws://localhost:21213",
   "autoReconnect": true,
-  "connectedAt": 1791508476330,
-  "lastActivityAt": 1791516049756,
-  "viewerCount": 1255,
+  "connectedAt": 1791512389946,
+  "lastActivityAt": 1791515989946,
+  "viewerCount": 1420,
   "likeTotal": 28450,
-  "pingMs": 14
+  "pingMs": 18
 }

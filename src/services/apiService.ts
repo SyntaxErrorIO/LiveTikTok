@@ -67,6 +67,8 @@ class ApiService {
         localStorage.removeItem('livetrigger_auth_token');
       }
     }
+    // Re-connect SSE with authenticated token
+    this.initSSE();
   }
 
   private async fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
@@ -85,7 +87,17 @@ class ApiService {
     }
 
     try {
-      this.eventSource = new EventSource('/api/events/stream');
+      const urlParams = new URLSearchParams(window.location.search);
+      const overlayToken = urlParams.get('token') || urlParams.get('overlayToken');
+
+      let streamUrl = '/api/events/stream';
+      if (this.authToken) {
+        streamUrl += `?token=${encodeURIComponent(this.authToken)}`;
+      } else if (overlayToken) {
+        streamUrl += `?overlayToken=${encodeURIComponent(overlayToken)}`;
+      }
+
+      this.eventSource = new EventSource(streamUrl);
 
       this.eventSource.onopen = () => {
         this.sseConnected = true;
@@ -116,8 +128,6 @@ class ApiService {
               payload: data.payload,
             });
           }
-          // Do not broadcast EXECUTION_LOG to eventBus because sseListeners handles it directly below,
-          // avoiding duplicate log entries in state.
 
           this.sseListeners.forEach((cb) => cb(data));
         } catch {}
@@ -125,7 +135,6 @@ class ApiService {
 
       this.eventSource.onerror = () => {
         this.sseConnected = false;
-        // EventSource will automatically retry in modern browsers
       };
     } catch {}
   }
@@ -138,7 +147,7 @@ class ApiService {
   // Rules
   public async getRules(): Promise<AutomationRule[]> {
     try {
-      const res = await fetch('/api/rules');
+      const res = await this.fetchWithAuth('/api/rules');
       const data = await res.json();
       return data.rules || [];
     } catch {
@@ -148,7 +157,7 @@ class ApiService {
 
   public async saveRule(rule: AutomationRule): Promise<boolean> {
     try {
-      const res = await fetch('/api/rules', {
+      const res = await this.fetchWithAuth('/api/rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rule),
@@ -162,7 +171,7 @@ class ApiService {
 
   public async deleteRule(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+      const res = await this.fetchWithAuth(`/api/rules/${id}`, { method: 'DELETE' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -172,7 +181,7 @@ class ApiService {
 
   public async toggleRule(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/rules/${id}/toggle`, { method: 'POST' });
+      const res = await this.fetchWithAuth(`/api/rules/${id}/toggle`, { method: 'POST' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -183,7 +192,7 @@ class ApiService {
   // Connection
   public async getConnection(): Promise<ConnectionConfig | null> {
     try {
-      const res = await fetch('/api/connection');
+      const res = await this.fetchWithAuth('/api/connection');
       const data = await res.json();
       return data.connection || null;
     } catch {
@@ -193,7 +202,7 @@ class ApiService {
 
   public async setConnectionMode(mode: 'simulation' | 'real_tiktok'): Promise<ConnectionConfig | null> {
     try {
-      const res = await fetch('/api/connection/mode', {
+      const res = await this.fetchWithAuth('/api/connection/mode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode }),
@@ -207,7 +216,7 @@ class ApiService {
 
   public async connect(): Promise<boolean> {
     try {
-      const res = await fetch('/api/connection/connect', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/connection/connect', { method: 'POST' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -217,7 +226,7 @@ class ApiService {
 
   public async disconnect(): Promise<boolean> {
     try {
-      const res = await fetch('/api/connection/disconnect', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/connection/disconnect', { method: 'POST' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -228,7 +237,7 @@ class ApiService {
   // Counters
   public async getCounters(): Promise<StreamCounter[]> {
     try {
-      const res = await fetch('/api/counters');
+      const res = await this.fetchWithAuth('/api/counters');
       const data = await res.json();
       return data.counters || [];
     } catch {
@@ -238,7 +247,7 @@ class ApiService {
 
   public async resetCounter(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/counters/${id}/reset`, { method: 'POST' });
+      const res = await this.fetchWithAuth(`/api/counters/${id}/reset`, { method: 'POST' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -249,7 +258,7 @@ class ApiService {
   // Leaderboard
   public async getLeaderboard(): Promise<LeaderboardEntry[]> {
     try {
-      const res = await fetch('/api/leaderboard');
+      const res = await this.fetchWithAuth('/api/leaderboard');
       const data = await res.json();
       return data.leaderboard || [];
     } catch {
@@ -259,7 +268,7 @@ class ApiService {
 
   public async resetLeaderboard(): Promise<boolean> {
     try {
-      const res = await fetch('/api/leaderboard/reset', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/leaderboard/reset', { method: 'POST' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -270,7 +279,7 @@ class ApiService {
   // Logs
   public async getLogs(): Promise<ExecutionLog[]> {
     try {
-      const res = await fetch('/api/logs');
+      const res = await this.fetchWithAuth('/api/logs');
       const data = await res.json();
       return data.logs || [];
     } catch {
@@ -280,7 +289,7 @@ class ApiService {
 
   public async clearLogs(): Promise<boolean> {
     try {
-      const res = await fetch('/api/logs', { method: 'DELETE' });
+      const res = await this.fetchWithAuth('/api/logs', { method: 'DELETE' });
       const data = await res.json();
       return Boolean(data.success);
     } catch {
@@ -291,7 +300,7 @@ class ApiService {
   // Settings & Engine Stats
   public async getSettings(): Promise<AppSettings | null> {
     try {
-      const res = await fetch('/api/settings');
+      const res = await this.fetchWithAuth('/api/settings');
       const data = await res.json();
       return data.settings || null;
     } catch {
@@ -301,7 +310,7 @@ class ApiService {
 
   public async saveSettings(settings: AppSettings): Promise<boolean> {
     try {
-      const res = await fetch('/api/settings', {
+      const res = await this.fetchWithAuth('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
@@ -315,7 +324,7 @@ class ApiService {
 
   public async toggleMasterAutomation(enabled: boolean): Promise<boolean> {
     try {
-      const res = await fetch('/api/settings/pause', {
+      const res = await this.fetchWithAuth('/api/settings/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
@@ -329,7 +338,7 @@ class ApiService {
 
   public async getEngineStats(): Promise<EngineStats | null> {
     try {
-      const res = await fetch('/api/engine/stats');
+      const res = await this.fetchWithAuth('/api/engine/stats');
       const data = await res.json();
       return data.stats || null;
     } catch {
@@ -340,7 +349,7 @@ class ApiService {
   // Simulate event via backend engine
   public async simulateEvent(rawEvent: any): Promise<any> {
     try {
-      const res = await fetch('/api/events/simulate', {
+      const res = await this.fetchWithAuth('/api/events/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rawEvent),
@@ -354,7 +363,7 @@ class ApiService {
   // Automated Tests Runner
   public async runAutomatedTests(): Promise<TestSuiteResult> {
     try {
-      const res = await fetch('/api/tests/run', { method: 'POST' });
+      const res = await this.fetchWithAuth('/api/tests/run', { method: 'POST' });
       return await res.json();
     } catch (err: any) {
       return {
@@ -369,7 +378,7 @@ class ApiService {
   // Pre-configured Mock Event Dispatcher
   public async triggerMockPresetEvent(preset: 'rose' | 'galaxy' | 'lion' | 'universe' | 'comment_hype' | 'likes'): Promise<any> {
     try {
-      const res = await fetch('/api/tests/mock-event', {
+      const res = await this.fetchWithAuth('/api/tests/mock-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preset }),

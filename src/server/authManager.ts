@@ -26,7 +26,31 @@ export interface UserSessionPayload {
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const JWT_SECRET = process.env.JWT_SECRET || 'livetrigger_sec_prod_key_must_override_in_env_61829';
+
+// Secure JWT secret initialization: reject insecure defaults in production
+function resolveJwtSecret(): string {
+  const envSecret = process.env.JWT_SECRET?.trim();
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (isProd) {
+    if (!envSecret || envSecret.length < 32 || envSecret.includes('livetrigger_sec_prod_key')) {
+      const errMsg = 'FATAL SEGURIDAD: En producción es obligatorio definir la variable JWT_SECRET con al menos 32 caracteres criptográficos seguros.';
+      SystemLogger.error('SECURITY', errMsg);
+      throw new Error(errMsg);
+    }
+    return envSecret;
+  }
+
+  // Non-production (dev/test): use provided secret or generate a strong ephemeral random key
+  if (envSecret && envSecret.length >= 16) {
+    return envSecret;
+  }
+
+  const generated = crypto.randomBytes(32).toString('hex');
+  return generated;
+}
+
+const JWT_SECRET = resolveJwtSecret();
 
 export class AuthManager {
   private static users: UserAccount[] = [];
@@ -50,33 +74,66 @@ export class AuthManager {
       }
     }
 
-    // Seed default admin if no users exist
+    // Initial administrator configuration (NO hardcoded passwords)
     if (this.users.length === 0) {
-      const defaultEmail = process.env.ADMIN_EMAIL || 'admin@livetrigger.local';
-      const defaultPassword = process.env.ADMIN_PASSWORD || 'LiveTrigger2026!';
-      const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
+      const isProd = process.env.NODE_ENV === 'production';
+      const adminEmail = process.env.ADMIN_EMAIL?.trim();
+      const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+      const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
 
-      const salt = crypto.randomBytes(16).toString('hex');
-      const hash = this.hashPassword(defaultPassword, salt);
-      const defaultUser: UserAccount = {
-        id: 'usr-admin-primary',
-        username: defaultUsername,
-        email: defaultEmail.toLowerCase(),
-        role: 'admin',
-        passwordHash: hash,
-        passwordSalt: salt,
-        overlayToken: crypto.randomBytes(24).toString('hex'),
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-      };
+      if (adminEmail && adminPassword) {
+        if (adminPassword.length < 10) {
+          SystemLogger.warn('AUTH', 'ADMIN_PASSWORD demasiado corta. Debe tener al menos 10 caracteres.');
+        } else {
+          const salt = crypto.randomBytes(16).toString('hex');
+          const hash = this.hashPassword(adminPassword, salt);
+          const adminUser: UserAccount = {
+            id: 'usr-admin-primary',
+            username: adminUsername,
+            email: adminEmail.toLowerCase(),
+            role: 'admin',
+            passwordHash: hash,
+            passwordSalt: salt,
+            overlayToken: crypto.randomBytes(24).toString('hex'),
+            createdAt: Date.now(),
+            lastLoginAt: Date.now(),
+          };
 
-      this.users.push(defaultUser);
-      this.saveUsers();
+          this.users.push(adminUser);
+          this.saveUsers();
 
-      SystemLogger.info('AUTH', 'Cuenta administrativa inicial creada', {
-        userId: defaultUser.id,
-        details: { email: defaultUser.email, note: 'Credenciales iniciales creadas desde variables de entorno.' },
-      });
+          SystemLogger.info('AUTH', 'Cuenta administrativa inicial creada desde variables de entorno seguras', {
+            userId: adminUser.id,
+            details: { email: adminUser.email },
+          });
+        }
+      } else if (!isProd) {
+        // En desarrollo/pruebas, si no se definen variables, generar contraseña aleatoria no predecible
+        const devPass = 'Dev_' + crypto.randomBytes(8).toString('hex') + '!2026';
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = this.hashPassword(devPass, salt);
+        const adminUser: UserAccount = {
+          id: 'usr-admin-primary',
+          username: 'admin',
+          email: 'admin@local.test',
+          role: 'admin',
+          passwordHash: hash,
+          passwordSalt: salt,
+          overlayToken: crypto.randomBytes(24).toString('hex'),
+          createdAt: Date.now(),
+          lastLoginAt: Date.now(),
+        };
+
+        this.users.push(adminUser);
+        this.saveUsers();
+
+        SystemLogger.info('AUTH', 'Cuenta de desarrollo inicial generada con credencial efímera única', {
+          userId: adminUser.id,
+          details: { note: 'Configure ADMIN_EMAIL y ADMIN_PASSWORD en variables de entorno para entornos reales.' },
+        });
+      } else {
+        SystemLogger.warn('AUTH', 'Sin cuenta de administrador inicial. Defina ADMIN_EMAIL y ADMIN_PASSWORD en variables de entorno.');
+      }
     }
   }
 

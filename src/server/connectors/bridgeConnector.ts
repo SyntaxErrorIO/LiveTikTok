@@ -71,10 +71,9 @@ export class BridgeTikTokConnector implements ITikTokConnector {
         }, 5000);
 
         ws.onopen = () => {
-          clearTimeout(timeout);
-          this.status = 'connected';
+          // Socket opened to bridge daemon, sending handshake to verify live stream
+          this.status = 'connecting';
           this.lastErrorMessage = undefined;
-          this.reconnectManager.reset();
 
           // Handshake payload: specify public username only (NO PASSWORDS)
           ws.send(
@@ -84,13 +83,42 @@ export class BridgeTikTokConnector implements ITikTokConnector {
             })
           );
 
-          this.notifyStatus();
-          resolve(true);
+          // We mark connected once socket is stable and bridge acknowledges or stays open
+          setTimeout(() => {
+            if (this.status === 'connecting' && ws.readyState === WebSocketClass.OPEN) {
+              clearTimeout(timeout);
+              this.status = 'connected';
+              this.lastErrorMessage = undefined;
+              this.reconnectManager.reset();
+              this.notifyStatus();
+              resolve(true);
+            }
+          }, 600);
         };
 
         ws.onmessage = (event: any) => {
           try {
             const rawData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+
+            // Check if bridge returned an explicit error (e.g. user offline or room not found)
+            if (rawData.status === 'error' || rawData.type === 'ERROR' || rawData.error) {
+              const errMsg = rawData.message || rawData.error || 'La transmisión de TikTok no está disponible o el usuario no está en vivo.';
+              this.status = 'error';
+              this.lastErrorMessage = errMsg;
+              this.notifyStatus();
+              return;
+            }
+
+            // Check if bridge confirmed connection
+            if (rawData.status === 'connected' || rawData.type === 'CONNECTED' || rawData.event === 'connected') {
+              clearTimeout(timeout);
+              this.status = 'connected';
+              this.lastErrorMessage = undefined;
+              this.reconnectManager.reset();
+              this.notifyStatus();
+              resolve(true);
+            }
+
             this.eventListeners.forEach((cb) => {
               try { cb(rawData); } catch {}
             });

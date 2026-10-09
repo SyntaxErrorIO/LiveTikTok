@@ -1,0 +1,28 @@
+[
+  {
+    "id": "rule-int-rose-1791515990278",
+    "name": "Regla de Integración Rosas",
+    "description": "Prueba de motor",
+    "enabled": true,
+    "triggerType": "gift",
+    "conditions": {
+      "giftName": "Rosa"
+    },
+    "actions": [
+      {
+        "id": "act-int-1",
+        "type": "update_counter",
+        "enabled": true,
+        "counterId": "cnt-roses-goal",
+        "counterOperation": "increment",
+        "counterAmount": 5
+      }
+    ],
+    "priority": "high",
+    "cooldownSeconds": 0,
+    "maxPerHour": 100,
+    "createdAt": 1791515990278,
+    "executionsCount": 1,
+    "lastTriggeredAt": 1791515990280
+  }
+]

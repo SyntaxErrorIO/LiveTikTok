@@ -1,0 +1,21 @@
+[
+  {
+    "id": "log-mv0ed53d-wez5ylp",
+    "eventId": "evt-gift-1791515990278-t8d5q",
+    "eventTimestamp": 1791515990278,
+    "source": "simulation",
+    "eventType": "gift",
+    "eventSummary": "1x Rosa (1 💎)",
+    "senderName": "Super Fan",
+    "matchedRules": [
+      {
+        "ruleId": "rule-int-rose-1791515990278",
+        "ruleName": "Regla de Integración Rosas",
+        "executedActionsCount": 1,
+        "status": "executed"
+      }
+    ],
+    "overallStatus": "executed",
+    "executionTimeMs": 2
+  }
+]

@@ -104,7 +104,7 @@ export class StateStore {
 
   private static getWorkspaceDir(userId?: string): string {
     this.ensureDirs();
-    if (!userId || userId === 'default' || userId === 'usr-admin-primary') {
+    if (!userId || userId === 'default') {
       return DATA_DIR;
     }
     const safeUser = userId.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -112,6 +112,17 @@ export class StateStore {
     if (!fs.existsSync(userDir)) {
       try {
         fs.mkdirSync(userDir, { recursive: true });
+        // If migrating admin or creating initial user, seed with defaults or root data if available
+        if (userId === 'usr-admin-primary') {
+          const files = ['rules.json', 'effects.json', 'settings.json', 'connection.json', 'counters.json', 'leaderboard.json'];
+          for (const f of files) {
+            const rootFile = path.join(DATA_DIR, f);
+            const userFile = path.join(userDir, f);
+            if (fs.existsSync(rootFile) && !fs.existsSync(userFile)) {
+              try { fs.copyFileSync(rootFile, userFile); } catch {}
+            }
+          }
+        }
       } catch {}
     }
     return userDir;
@@ -258,11 +269,11 @@ export class StateStore {
     return snapshot;
   }
 
-  public static listSnapshots(): { id: string; timestamp: number; reason: string; fileName: string; sizeBytes: number }[] {
+  public static listSnapshots(userId?: string, isAdmin: boolean = false): { id: string; timestamp: number; reason: string; fileName: string; sizeBytes: number; userId?: string }[] {
     this.ensureDirs();
     try {
       const files = fs.readdirSync(BACKUPS_DIR).filter((f) => f.endsWith('.json'));
-      return files
+      const list = files
         .map((f) => {
           const fullPath = path.join(BACKUPS_DIR, f);
           const stat = fs.statSync(fullPath);
@@ -275,6 +286,7 @@ export class StateStore {
               reason: parsed.reason || 'Snapshot automático',
               fileName: f,
               sizeBytes: stat.size,
+              userId: parsed.userId,
             };
           } catch {
             return {
@@ -283,16 +295,23 @@ export class StateStore {
               reason: 'Archivo de respaldo',
               fileName: f,
               sizeBytes: stat.size,
+              userId: undefined,
             };
           }
         })
+        .filter((item) => {
+          if (isAdmin) return true;
+          if (!userId) return false;
+          return item.userId === userId;
+        })
         .sort((a, b) => b.timestamp - a.timestamp);
+      return list;
     } catch {
       return [];
     }
   }
 
-  public static restoreSnapshot(fileName: string, userId?: string): boolean {
+  public static restoreSnapshot(fileName: string, userId?: string, isAdmin: boolean = false): boolean {
     this.ensureDirs();
     const safeName = path.basename(fileName);
     const filePath = path.join(BACKUPS_DIR, safeName);
@@ -303,6 +322,15 @@ export class StateStore {
       const raw = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw) as FullBackupSnapshot;
       if (!parsed.data) return false;
+
+      // Ensure snapshot belongs to caller unless caller is admin
+      if (!isAdmin && parsed.userId && parsed.userId !== userId) {
+        SystemLogger.warn('SECURITY', `Intento no autorizado de restaurar snapshot de otro usuario: ${safeName}`, {
+          userId,
+          details: { snapshotOwner: parsed.userId },
+        });
+        return false;
+      }
 
       if (Array.isArray(parsed.data.rules)) this.saveRules(parsed.data.rules, userId);
       if (Array.isArray(parsed.data.effects)) this.saveEffects(parsed.data.effects, userId);

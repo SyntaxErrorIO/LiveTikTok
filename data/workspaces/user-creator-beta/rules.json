@@ -1,0 +1,18 @@
+[
+  {
+    "id": "rule-beta-1",
+    "name": "Regla del Creador Beta",
+    "description": "Exclusiva de Beta",
+    "enabled": true,
+    "triggerType": "comment",
+    "conditions": {
+      "commentKeyword": "!fiesta"
+    },
+    "actions": [],
+    "priority": "medium",
+    "cooldownSeconds": 5,
+    "maxPerHour": 20,
+    "createdAt": 1791515990274,
+    "executionsCount": 0
+  }
+]

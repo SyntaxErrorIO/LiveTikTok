@@ -32,12 +32,23 @@ export interface SSEBroadcastMessage {
   timestamp: number;
 }
 
+interface SSEClientSubscriber {
+  id: string;
+  listener: (data: SSEBroadcastMessage) => void;
+  userId?: string;
+  overlayToken?: string;
+  isAdmin?: boolean;
+}
+
 export class CoreAutomationEngine {
   private deduplicator: EventDeduplicator;
   private taskQueue: TaskQueue;
-  private sseClients: Set<(data: SSEBroadcastMessage) => void> = new Set();
+  private sseClients: Map<string, SSEClientSubscriber> = new Map();
   private activeConnector: ITikTokConnector | null = null;
   private startedAt: number = Date.now();
+
+  // Sliding window execution timestamps per rule: ruleId -> timestamp[]
+  private ruleExecutionTimestamps: Map<string, number[]> = new Map();
 
   // Engine telemetry
   private totalReceived: number = 0;
@@ -57,16 +68,39 @@ export class CoreAutomationEngine {
     }
   }
 
-  // Subscribe SSE clients
-  public subscribeSSE(listener: (data: SSEBroadcastMessage) => void): () => void {
-    this.sseClients.add(listener);
-    return () => this.sseClients.delete(listener);
+  // Subscribe SSE clients with user identification
+  public subscribeSSE(
+    listener: (data: SSEBroadcastMessage) => void,
+    userId?: string,
+    overlayToken?: string,
+    isAdmin?: boolean
+  ): () => void {
+    const id = 'sub-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 7);
+    this.sseClients.set(id, { id, listener, userId, overlayToken, isAdmin: Boolean(isAdmin) });
+    return () => this.sseClients.delete(id);
   }
 
-  public broadcast(msg: SSEBroadcastMessage) {
+  // User-scoped broadcasting
+  public broadcast(msg: SSEBroadcastMessage, targetUserId?: string) {
     this.sseClients.forEach((client) => {
+      // If targetUserId is specified, only send to matching user, matching overlay, or admin
+      if (targetUserId) {
+        const matchesUser = client.userId === targetUserId;
+        const matchesAdmin = client.isAdmin === true;
+        let matchesOverlay = false;
+        if (client.overlayToken) {
+          const user = StateStore.getConnection(targetUserId);
+          // Check if overlay belongs to target user
+          matchesOverlay = client.userId === targetUserId;
+        }
+
+        if (!matchesUser && !matchesAdmin && !matchesOverlay) {
+          return;
+        }
+      }
+
       try {
-        client(msg);
+        client.listener(msg);
       } catch {
         // SSE disconnected
       }
@@ -74,10 +108,10 @@ export class CoreAutomationEngine {
   }
 
   // Master switch control
-  public setMasterAutomation(enabled: boolean) {
-    const settings = StateStore.getSettings();
+  public setMasterAutomation(enabled: boolean, userId?: string) {
+    const settings = StateStore.getSettings(userId);
     settings.masterAutomationEnabled = enabled;
-    StateStore.saveSettings(settings);
+    StateStore.saveSettings(settings, userId);
 
     if (enabled) {
       this.taskQueue.resume();
@@ -85,15 +119,22 @@ export class CoreAutomationEngine {
       this.taskQueue.pause();
     }
 
-    this.broadcast({
-      type: 'MASTER_SWITCH',
-      payload: { enabled },
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'MASTER_SWITCH',
+        payload: { enabled },
+        timestamp: Date.now(),
+      },
+      userId
+    );
   }
 
   // Handle incoming raw event from webhook, connector, or simulator
-  public async ingestRawEvent(raw: any, source: 'real_tiktok' | 'simulation' = 'real_tiktok'): Promise<{
+  public async ingestRawEvent(
+    raw: any,
+    source: 'real_tiktok' | 'simulation' = 'real_tiktok',
+    targetUserId?: string
+  ): Promise<{
     accepted: boolean;
     reason: string;
     event?: TikTokEvent;
@@ -113,17 +154,20 @@ export class CoreAutomationEngine {
       return { accepted: false, reason: `Evento duplicado detectado (ID: ${event.id}). Omitido por deduplicador.` };
     }
 
-    // 3. Broadcast incoming normalized event
-    this.broadcast({
-      type: 'TIKTOK_EVENT',
-      payload: event,
-      timestamp: Date.now(),
-    });
+    // 3. Broadcast incoming normalized event to user channel
+    this.broadcast(
+      {
+        type: 'TIKTOK_EVENT',
+        payload: event,
+        timestamp: Date.now(),
+      },
+      targetUserId
+    );
 
     // 4. Update activity in connection
-    const conn = StateStore.getConnection();
+    const conn = StateStore.getConnection(targetUserId);
     conn.lastActivityAt = Date.now();
-    StateStore.saveConnection(conn);
+    StateStore.saveConnection(conn, targetUserId);
 
     // 5. Enqueue for autonomous processing
     this.taskQueue.enqueue({
@@ -131,10 +175,10 @@ export class CoreAutomationEngine {
       name: `Procesar evento ${event.type} de @${event.user.username}`,
       priority: event.type === 'gift' ? 'high' : event.type === 'comment' ? 'medium' : 'low',
       task: async () => {
-        await this.evaluateAndExecute(event);
+        await this.evaluateAndExecute(event, targetUserId);
       },
       enqueuedAt: Date.now(),
-      onError: (err) => {
+      onError: () => {
         this.totalErrors++;
       },
     });
@@ -143,15 +187,15 @@ export class CoreAutomationEngine {
   }
 
   // Evaluate rules and trigger actions
-  private async evaluateAndExecute(event: TikTokEvent) {
+  private async evaluateAndExecute(event: TikTokEvent, targetUserId?: string) {
     const startTime = performance.now();
-    const settings = StateStore.getSettings();
-    const rules = StateStore.getRules();
-    const effects = StateStore.getEffects();
+    const settings = StateStore.getSettings(targetUserId);
+    const rules = StateStore.getRules(targetUserId);
+    const effects = StateStore.getEffects(targetUserId);
     const now = Date.now();
 
     if (!settings.masterAutomationEnabled) {
-      this.recordLog(event, [], 'no_match', 0, 'Motor pausado por el usuario.');
+      this.recordLog(event, [], 'no_match', 0, 'Motor pausado por el usuario.', targetUserId);
       return;
     }
 
@@ -163,6 +207,7 @@ export class CoreAutomationEngine {
     const evaluatedDetails: ExecutionLog['matchedRules'] = [];
     let anyExecuted = false;
     let anyCooldown = false;
+    let lastExecutionError: string | undefined;
 
     for (const rule of sortedRules) {
       if (!rule.enabled || rule.triggerType !== event.type) {
@@ -194,8 +239,12 @@ export class CoreAutomationEngine {
         continue;
       }
 
-      // Check hourly rate limit
-      if (rule.maxPerHour && rule.executionsCount >= rule.maxPerHour) {
+      // Check hourly rate limit with rolling 1-hour window
+      const oneHourAgo = now - 60 * 60 * 1000;
+      const history = (this.ruleExecutionTimestamps.get(rule.id) || []).filter((t) => t > oneHourAgo);
+      this.ruleExecutionTimestamps.set(rule.id, history);
+
+      if (rule.maxPerHour && history.length >= rule.maxPerHour) {
         evaluatedDetails.push({
           ruleId: rule.id,
           ruleName: rule.name,
@@ -208,33 +257,54 @@ export class CoreAutomationEngine {
 
       // Execute actions
       let executedActionsCount = 0;
+      let ruleActionError: string | undefined;
+
       for (const action of rule.actions) {
         if (!action.enabled) continue;
         try {
-          await this.executeAction(action, event, effects, settings);
+          await this.executeAction(action, event, effects, settings, targetUserId);
           executedActionsCount++;
         } catch (err: any) {
           this.totalErrors++;
+          ruleActionError = err?.message || String(err);
+          lastExecutionError = ruleActionError;
+          SystemLogger.error(
+            'ENGINE',
+            `Fallo en acción [${action.type}] de regla "${rule.name}": ${ruleActionError}`,
+            {
+              userId: targetUserId,
+              details: { ruleId: rule.id, actionId: action.id, error: ruleActionError },
+            }
+          );
         }
       }
 
-      // Update rule execution counters
-      rule.lastTriggeredAt = now;
-      rule.executionsCount = (rule.executionsCount || 0) + 1;
-
-      evaluatedDetails.push({
-        ruleId: rule.id,
-        ruleName: rule.name,
-        executedActionsCount,
-        status: 'executed',
-      });
-
       if (executedActionsCount > 0) {
+        // Register execution timestamp in rolling 1-hour window
+        history.push(now);
+        this.ruleExecutionTimestamps.set(rule.id, history);
+        rule.executionsCount = history.length;
+        rule.lastTriggeredAt = now;
         anyExecuted = true;
+
+        evaluatedDetails.push({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          executedActionsCount,
+          status: 'executed',
+        });
+      } else if (ruleActionError) {
+        // External action failed: do not report success
+        evaluatedDetails.push({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          executedActionsCount: 0,
+          status: 'condition_failed',
+        });
       }
     }
 
-    StateStore.saveRules(rules);
+    StateStore.saveRules(rules, targetUserId);
 
     const execTime = Math.max(1, Math.round(performance.now() - startTime));
     this.totalProcessed++;
@@ -245,7 +315,7 @@ export class CoreAutomationEngine {
       ? 'cooldown'
       : 'no_match';
 
-    this.recordLog(event, evaluatedDetails, overallStatus, execTime);
+    this.recordLog(event, evaluatedDetails, overallStatus, execTime, lastExecutionError, targetUserId);
   }
 
   private checkConditions(event: TikTokEvent, rule: AutomationRule): { passed: boolean; reason: string } {
@@ -309,7 +379,7 @@ export class CoreAutomationEngine {
     return { passed: true, reason: 'OK' };
   }
 
-  private async executeAction(action: any, event: TikTokEvent, effects: OverlayEffect[], settings: any) {
+  private async executeAction(action: any, event: TikTokEvent, effects: OverlayEffect[], settings: any, targetUserId?: string) {
     const formattedTitle = this.formatVariables(action.customMessageText || '{user} activó evento', event);
 
     switch (action.type) {
@@ -319,71 +389,83 @@ export class CoreAutomationEngine {
         const subtitle = this.formatVariables(effect.subtitleTemplate, event);
         const ttsText = effect.enableTTS ? this.formatVariables(effect.ttsTemplate, event) : undefined;
 
-        this.broadcast({
-          type: 'TRIGGER_ACTION',
-          payload: {
-            actionType: 'overlay_effect',
-            effect,
-            formattedTitle: title,
-            formattedSubtitle: subtitle,
-            ttsVoiceText: ttsText,
-            event,
+        this.broadcast(
+          {
+            type: 'TRIGGER_ACTION',
+            payload: {
+              actionType: 'overlay_effect',
+              effect,
+              formattedTitle: title,
+              formattedSubtitle: subtitle,
+              ttsVoiceText: ttsText,
+              event,
+            },
+            timestamp: Date.now(),
           },
-          timestamp: Date.now(),
-        });
+          targetUserId
+        );
         break;
       }
 
       case 'sound_fx': {
-        this.broadcast({
-          type: 'TRIGGER_ACTION',
-          payload: {
-            actionType: 'sound_fx',
-            soundId: action.soundId || 'chime',
-            volume: action.volume ?? 80,
-            event,
+        this.broadcast(
+          {
+            type: 'TRIGGER_ACTION',
+            payload: {
+              actionType: 'sound_fx',
+              soundId: action.soundId || 'chime',
+              volume: action.volume ?? 80,
+              event,
+            },
+            timestamp: Date.now(),
           },
-          timestamp: Date.now(),
-        });
+          targetUserId
+        );
         break;
       }
 
       case 'tts_speech': {
         const text = this.formatVariables(action.ttsTemplate || '{user} envió un regalo', event);
-        this.broadcast({
-          type: 'TRIGGER_ACTION',
-          payload: {
-            actionType: 'tts_speech',
-            text,
-            ttsSpeed: action.ttsSpeed || 1.0,
-            ttsVoice: action.ttsVoice,
-            event,
+        this.broadcast(
+          {
+            type: 'TRIGGER_ACTION',
+            payload: {
+              actionType: 'tts_speech',
+              text,
+              ttsSpeed: action.ttsSpeed || 1.0,
+              ttsVoice: action.ttsVoice,
+              event,
+            },
+            timestamp: Date.now(),
           },
-          timestamp: Date.now(),
-        });
+          targetUserId
+        );
         break;
       }
 
       case 'custom_message': {
-        this.broadcast({
-          type: 'TRIGGER_ACTION',
-          payload: {
-            actionType: 'custom_message',
-            message: formattedTitle,
-            event,
+        this.broadcast(
+          {
+            type: 'TRIGGER_ACTION',
+            payload: {
+              actionType: 'custom_message',
+              message: formattedTitle,
+              event,
+            },
+            timestamp: Date.now(),
           },
-          timestamp: Date.now(),
-        });
+          targetUserId
+        );
         break;
       }
 
       case 'update_counter': {
-        this.handleCounterUpdate(action, event);
+        this.handleCounterUpdate(action, event, targetUserId);
         break;
       }
 
       case 'add_leaderboard_points': {
-        this.handleLeaderboardUpdate(action, event);
+        this.handleLeaderboardUpdate(action, event, targetUserId);
         break;
       }
 
@@ -393,24 +475,14 @@ export class CoreAutomationEngine {
       }
 
       case 'webhook_post': {
-        if (action.webhookUrl) {
-          fetch(action.webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event,
-              timestamp: Date.now(),
-              source: 'LiveTrigger_AI',
-            }),
-          }).catch(() => {});
-        }
+        await this.handleWebhookPost(action, event);
         break;
       }
     }
   }
 
-  private handleCounterUpdate(action: any, event: TikTokEvent) {
-    const counters = StateStore.getCounters();
+  private handleCounterUpdate(action: any, event: TikTokEvent, targetUserId?: string) {
+    const counters = StateStore.getCounters(targetUserId);
     const targetCounter = counters.find((c) => c.id === action.counterId) || counters[0];
 
     if (!targetCounter) return;
@@ -433,17 +505,20 @@ export class CoreAutomationEngine {
     }
 
     targetCounter.lastUpdated = Date.now();
-    StateStore.saveCounters(counters);
+    StateStore.saveCounters(counters, targetUserId);
 
-    this.broadcast({
-      type: 'COUNTERS_UPDATED',
-      payload: counters,
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'COUNTERS_UPDATED',
+        payload: counters,
+        timestamp: Date.now(),
+      },
+      targetUserId
+    );
   }
 
-  private handleLeaderboardUpdate(action: any, event: TikTokEvent) {
-    const leaderboard = StateStore.getLeaderboard();
+  private handleLeaderboardUpdate(action: any, event: TikTokEvent, targetUserId?: string) {
+    const leaderboard = StateStore.getLeaderboard(targetUserId);
     let entry = leaderboard.find((l) => l.userId === event.user.id || l.username === event.user.username);
 
     let pointsToAdd = 10;
@@ -472,36 +547,103 @@ export class CoreAutomationEngine {
     // Sort descending by points
     leaderboard.sort((a, b) => b.points - a.points);
     const topLeaderboard = leaderboard.slice(0, 50);
-    StateStore.saveLeaderboard(topLeaderboard);
+    StateStore.saveLeaderboard(topLeaderboard, targetUserId);
 
-    this.broadcast({
-      type: 'LEADERBOARD_UPDATED',
-      payload: topLeaderboard,
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'LEADERBOARD_UPDATED',
+        payload: topLeaderboard,
+        timestamp: Date.now(),
+      },
+      targetUserId
+    );
   }
 
   private async handleIoTDeviceOrder(action: any, event: TikTokEvent) {
     if (!action.deviceEndpoint) return;
 
+    // SSRF runtime check
+    const ssrfCheck = SecurityValidator.isSafeExternalUrl(action.deviceEndpoint);
+    if (!ssrfCheck.safe) {
+      throw new Error(`SSRF Bloqueado: ${ssrfCheck.reason}`);
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), action.deviceTimeoutMs || 2500);
+    const timeoutMs = typeof action.deviceTimeoutMs === 'number' ? Math.max(500, Math.min(8000, action.deviceTimeoutMs)) : 3000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const payload = action.deviceCommandPayload
       ? this.formatVariables(action.deviceCommandPayload, event)
       : JSON.stringify({ trigger: 'TikTokEvent', type: event.type, user: event.user.username });
 
     try {
-      await fetch(action.deviceEndpoint, {
+      const res = await fetch(action.deviceEndpoint, {
         method: action.deviceMethod || 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: action.deviceMethod === 'GET' ? undefined : payload,
         signal: controller.signal,
       });
-    } catch (err: any) {
-      // Caught safely without bringing down engine
+
+      if (!res.ok) {
+        throw new Error(`Dispositivo IoT respondió con estado HTTP ${res.status} (${res.statusText})`);
+      }
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private async handleWebhookPost(action: any, event: TikTokEvent) {
+    if (!action.webhookUrl) return;
+
+    // SSRF runtime check
+    const ssrfCheck = SecurityValidator.isSafeExternalUrl(action.webhookUrl);
+    if (!ssrfCheck.safe) {
+      throw new Error(`SSRF Bloqueado: ${ssrfCheck.reason}`);
+    }
+
+    const payload = action.webhookPayload
+      ? this.formatVariables(action.webhookPayload, event)
+      : JSON.stringify({
+          event,
+          timestamp: Date.now(),
+          source: 'LiveTrigger_AI',
+        });
+
+    let lastError: Error | null = null;
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+
+      try {
+        const res = await fetch(action.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': 'LiveTrigger-Automation-Engine/1.2' },
+          body: payload,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          throw new Error(`Webhook devolvió error HTTP ${res.status}: ${res.statusText}`);
+        }
+
+        // Succeeded
+        return;
+      } catch (err: any) {
+        clearTimeout(timeout);
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < maxRetries) {
+          // Controlled backoff before retry
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
     }
   }
 
@@ -510,7 +652,8 @@ export class CoreAutomationEngine {
     matchedRules: ExecutionLog['matchedRules'],
     overallStatus: ExecutionLog['overallStatus'],
     executionTimeMs: number,
-    errorDetails?: string
+    errorDetails?: string,
+    targetUserId?: string
   ) {
     const log: ExecutionLog = {
       id: 'log-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 9),
@@ -526,13 +669,16 @@ export class CoreAutomationEngine {
       errorDetails,
     };
 
-    StateStore.addLog(log);
+    StateStore.addLog(log, 500, targetUserId);
 
-    this.broadcast({
-      type: 'EXECUTION_LOG',
-      payload: log,
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'EXECUTION_LOG',
+        payload: log,
+        timestamp: Date.now(),
+      },
+      targetUserId
+    );
   }
 
   private formatVariables(template: string, event: TikTokEvent): string {
@@ -564,8 +710,8 @@ export class CoreAutomationEngine {
   }
 
   // Connection management via decoupled ITikTokConnector
-  public async connect(): Promise<boolean> {
-    const conn = StateStore.getConnection();
+  public async connect(userId?: string): Promise<boolean> {
+    const conn = StateStore.getConnection(userId);
 
     // If existing connector has different mode, tear down cleanly
     if (this.activeConnector && this.activeConnector.mode !== conn.mode) {
@@ -576,9 +722,9 @@ export class CoreAutomationEngine {
     if (!this.activeConnector) {
       this.activeConnector = TikTokConnectorFactory.createConnector(conn.mode);
 
-      // Listen to raw events from connector and ingest them into automation engine
+      // Listen to raw events from connector and ingest them into automation engine for this user
       this.activeConnector.onEvent((rawEvent) => {
-        this.ingestRawEvent(rawEvent, this.activeConnector?.mode || 'simulation');
+        this.ingestRawEvent(rawEvent, this.activeConnector?.mode || 'simulation', userId);
       });
 
       // Listen to status updates
@@ -588,74 +734,92 @@ export class CoreAutomationEngine {
         conn.errorMessage = statusEvent.errorMessage;
         if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
         if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
-        StateStore.saveConnection(conn);
+        StateStore.saveConnection(conn, userId);
 
         if (statusEvent.status === 'error') {
           FailSafeManager.activate(statusEvent.errorMessage || 'Error crítico en el conector de TikTok');
-          this.broadcast({
-            type: 'FAIL_SAFE_STATE',
-            payload: FailSafeManager.getStatus(),
-            timestamp: Date.now(),
-          });
+          this.broadcast(
+            {
+              type: 'FAIL_SAFE_STATE',
+              payload: FailSafeManager.getStatus(),
+              timestamp: Date.now(),
+            },
+            userId
+          );
         }
 
-        this.broadcast({
-          type: 'CONNECTION_STATUS',
-          payload: conn,
-          timestamp: Date.now(),
-        });
+        this.broadcast(
+          {
+            type: 'CONNECTION_STATUS',
+            payload: conn,
+            timestamp: Date.now(),
+          },
+          userId
+        );
       });
     }
 
     const success = await this.activeConnector.connect(conn);
     if (success) {
       FailSafeManager.reset('Conexión establecida exitosamente');
-      this.broadcast({
-        type: 'FAIL_SAFE_STATE',
-        payload: FailSafeManager.getStatus(),
-        timestamp: Date.now(),
-      });
+      this.broadcast(
+        {
+          type: 'FAIL_SAFE_STATE',
+          payload: FailSafeManager.getStatus(),
+          timestamp: Date.now(),
+        },
+        userId
+      );
     } else {
       FailSafeManager.activate('No fue posible negociar la conexión con el proveedor.');
-      this.broadcast({
-        type: 'FAIL_SAFE_STATE',
-        payload: FailSafeManager.getStatus(),
-        timestamp: Date.now(),
-      });
+      this.broadcast(
+        {
+          type: 'FAIL_SAFE_STATE',
+          payload: FailSafeManager.getStatus(),
+          timestamp: Date.now(),
+        },
+        userId
+      );
     }
     return success;
   }
 
-  public disconnect() {
+  public disconnect(userId?: string) {
     if (this.activeConnector) {
       this.activeConnector.disconnect();
     }
 
-    const conn = StateStore.getConnection();
+    const conn = StateStore.getConnection(userId);
     conn.status = 'disconnected';
-    StateStore.saveConnection(conn);
-    this.broadcast({ type: 'CONNECTION_STATUS', payload: conn, timestamp: Date.now() });
+    StateStore.saveConnection(conn, userId);
+    this.broadcast({ type: 'CONNECTION_STATUS', payload: conn, timestamp: Date.now() }, userId);
   }
 
-  public simulateProviderDisconnect(reason: string = 'Pérdida de señal o socket cerrado por TikTok LIVE') {
-    const conn = StateStore.getConnection();
+  public simulateProviderDisconnect(reason: string = 'Pérdida de señal o socket cerrado por TikTok LIVE', userId?: string) {
+    const conn = StateStore.getConnection(userId);
     conn.status = 'disconnected';
     conn.errorMessage = reason;
     conn.lastActivityAt = Date.now();
-    StateStore.saveConnection(conn);
+    StateStore.saveConnection(conn, userId);
 
     FailSafeManager.activate(reason, 'tiktok_disconnect');
-    this.broadcast({
-      type: 'FAIL_SAFE_STATE',
-      payload: FailSafeManager.getStatus(),
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'FAIL_SAFE_STATE',
+        payload: FailSafeManager.getStatus(),
+        timestamp: Date.now(),
+      },
+      userId
+    );
 
-    this.broadcast({
-      type: 'CONNECTION_STATUS',
-      payload: conn,
-      timestamp: Date.now(),
-    });
+    this.broadcast(
+      {
+        type: 'CONNECTION_STATUS',
+        payload: conn,
+        timestamp: Date.now(),
+      },
+      userId
+    );
 
     this.recordLog(
       {
@@ -669,7 +833,8 @@ export class CoreAutomationEngine {
       [],
       'no_match',
       1,
-      `Aviso de conexión: ${reason}`
+      `Aviso de conexión: ${reason}`,
+      userId
     );
   }
 
@@ -681,8 +846,8 @@ export class CoreAutomationEngine {
   }
 
   // Engine statistics
-  public getStats(): EngineStats {
-    const conn = StateStore.getConnection();
+  public getStats(userId?: string): EngineStats {
+    const conn = StateStore.getConnection(userId);
     return {
       queuePending: this.taskQueue.size(),
       totalReceived: this.totalReceived,

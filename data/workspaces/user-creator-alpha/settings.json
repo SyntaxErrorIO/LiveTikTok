@@ -1,0 +1,14 @@
+{
+  "masterAutomationEnabled": true,
+  "masterVolume": 80,
+  "enableAudioSynthesizer": true,
+  "obsWebSocket": {
+    "enabled": false,
+    "url": "ws://127.0.0.1:4455",
+    "password": "",
+    "connected": false
+  },
+  "globalRateLimitPerMinute": 60,
+  "defaultOverlayDurationMs": 4500,
+  "historyRetentionCount": 300
+}
