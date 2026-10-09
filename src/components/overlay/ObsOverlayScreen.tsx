@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { eventBus, TriggerActionPayload } from '../../services/eventBus';
 import { audioEngine } from '../../services/audioEngine';
-import { Sparkles, Zap, Crown, Flame, Heart, Radio } from 'lucide-react';
+import { Sparkles, Zap, Crown, Flame, Heart, Radio, Target, Trophy, Award } from 'lucide-react';
+import { LeaderboardEntry, StreamCounter } from '../../types';
+import { StorageService } from '../../services/storageService';
 
 interface ActiveOverlay {
   id: string;
@@ -18,9 +20,67 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
   const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>([]);
   const [isFailSafe, setIsFailSafe] = useState(false);
 
+  // 4b: Metas de regalos (Gift Goal)
+  const [goalTitle, setGoalTitle] = useState('Meta de Diamantes');
+  const [goalCurrent, setGoalCurrent] = useState(320);
+  const [goalTarget, setGoalTarget] = useState(500);
+  const [goalReachedCelebrated, setGoalReachedCelebrated] = useState(false);
+  const [showGoal, setShowGoal] = useState(true);
+
+  // 4c: Top Donadores (Persistent top 5 ranking)
+  const [topDonors, setTopDonors] = useState<LeaderboardEntry[]>([]);
+  const [showTopDonors, setShowTopDonors] = useState(true);
+
+  // Initialize data from local storage or URL query parameters
+  useEffect(() => {
+    try {
+      const counters = StorageService.getCounters();
+      const diamondsCounter = counters.find((c: StreamCounter) => c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')) || counters[0];
+      if (diamondsCounter) {
+        setGoalTitle(diamondsCounter.name);
+        setGoalCurrent(diamondsCounter.current);
+        setGoalTarget(diamondsCounter.target || 500);
+      }
+
+      const leaderboard = StorageService.getLeaderboard();
+      if (leaderboard && leaderboard.length > 0) {
+        setTopDonors(leaderboard.slice(0, 5));
+      } else {
+        // Sample baseline for aesthetic rendering in OBS
+        setTopDonors([
+          { userId: '1', username: 'AstroVIP', nickname: 'Astro VIP', points: 1250, giftsCount: 14, lastUpdated: Date.now() },
+          { userId: '2', username: 'RosaFan', nickname: 'Rosa Fan', points: 680, giftsCount: 22, lastUpdated: Date.now() },
+          { userId: '3', username: 'LionKing', nickname: 'Rey León', points: 500, giftsCount: 3, lastUpdated: Date.now() },
+        ]);
+      }
+
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('showGoal') === 'false') setShowGoal(false);
+        if (params.get('showTop') === 'false') setShowTopDonors(false);
+        if (params.get('goalTarget')) setGoalTarget(Number(params.get('goalTarget')));
+      }
+    } catch {}
+  }, []);
+
+  // Check if goal reached to trigger celebratory animation
+  useEffect(() => {
+    if (goalCurrent >= goalTarget && !goalReachedCelebrated && goalTarget > 0) {
+      setGoalReachedCelebrated(true);
+      try {
+        confetti({
+          particleCount: 120,
+          spread: 100,
+          origin: { y: 0.2 },
+          colors: ['#eab308', '#f59e0b', '#38bdf8', '#a855f7', '#ffffff'],
+        });
+      } catch {}
+    }
+  }, [goalCurrent, goalTarget, goalReachedCelebrated]);
+
   useEffect(() => {
     const handleIncomingOverlay = (payload: TriggerActionPayload) => {
-      // If fail-safe mode is active, prevent phantom/deceptive triggers
+      // If fail-safe mode is active, prevent phantom triggers
       if (isFailSafe) return;
 
       const newOverlay: ActiveOverlay = {
@@ -31,8 +91,41 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
 
       setActiveOverlays((prev) => [...prev, newOverlay]);
 
-      // Launch celebratory particles
+      // Launch visual particles
       triggerVisualParticles(payload.effect.animationType, payload.effect.primaryColor, payload.effect.secondaryColor);
+
+      // If gift event with diamond value, increase goal progress
+      if (payload.event?.type === 'gift' && payload.event.data?.diamondCount) {
+        const diamonds = (payload.event.data.diamondCount || 1) * (payload.event.data.repeatCount || 1);
+        setGoalCurrent((curr) => curr + diamonds);
+
+        // Update top donors
+        setTopDonors((prev) => {
+          const donorUser = payload.event.user.username;
+          const existing = prev.find((d) => d.username === donorUser);
+          let updated: LeaderboardEntry[];
+          if (existing) {
+            updated = prev.map((d) =>
+              d.username === donorUser
+                ? { ...d, points: d.points + diamonds, giftsCount: d.giftsCount + 1 }
+                : d
+            );
+          } else {
+            updated = [
+              ...prev,
+              {
+                userId: payload.event.user.id || donorUser,
+                username: donorUser,
+                nickname: payload.event.user.nickname || donorUser,
+                points: diamonds,
+                giftsCount: 1,
+                lastUpdated: Date.now(),
+              },
+            ];
+          }
+          return updated.sort((a, b) => b.points - a.points).slice(0, 5);
+        });
+      }
 
       // In OBS standalone mode, play sound if requested
       if (!isPreview && payload.effect.soundId) {
@@ -54,7 +147,13 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
     let sseSource: EventSource | null = null;
     if (!isPreview && typeof window !== 'undefined') {
       try {
-        sseSource = new EventSource('/api/events/stream');
+        const params = new URLSearchParams(window.location.search);
+        const overlayToken = params.get('overlayToken') || params.get('token');
+        const streamUrl = overlayToken
+          ? `/api/events/stream?overlayToken=${encodeURIComponent(overlayToken)}`
+          : '/api/events/stream';
+
+        sseSource = new EventSource(streamUrl);
         sseSource.onmessage = (evt) => {
           try {
             const data = JSON.parse(evt.data);
@@ -70,6 +169,17 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
                 ttsVoiceText: p.ttsVoiceText,
                 timestamp: data.timestamp,
               });
+            } else if (data.type === 'COUNTERS_UPDATED' && Array.isArray(data.payload)) {
+              const diamondsCounter = data.payload.find((c: StreamCounter) =>
+                c.name.toLowerCase().includes('diamante') || c.id.includes('diamond')
+              ) || data.payload[0];
+              if (diamondsCounter) {
+                setGoalTitle(diamondsCounter.name);
+                setGoalCurrent(diamondsCounter.current);
+                setGoalTarget(diamondsCounter.target || 500);
+              }
+            } else if (data.type === 'LEADERBOARD_UPDATED' && Array.isArray(data.payload)) {
+              setTopDonors(data.payload.slice(0, 5));
             }
           } catch {}
         };
@@ -87,7 +197,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       if (sseSource) sseSource.close();
       clearInterval(interval);
     };
-  }, [isPreview]);
+  }, [isPreview, isFailSafe]);
 
   const triggerVisualParticles = (type: string, primary: string, secondary: string) => {
     try {
@@ -140,7 +250,6 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
           colors: ['#a855f7', '#ec4899', '#3b82f6', '#22d3ee'],
         });
       } else {
-        // Default streamer card flare
         confetti({
           particleCount: 35,
           spread: 60,
@@ -148,9 +257,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
           colors: [primary, secondary, '#ffffff'],
         });
       }
-    } catch {
-      // Confetti canvas error fallback
-    }
+    } catch {}
   };
 
   const getPositionClasses = (position: string) => {
@@ -187,12 +294,100 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
     }
   };
 
+  const goalPercentage = Math.min(100, Math.round((goalCurrent / (goalTarget || 1)) * 100));
+  const isGoalCompleted = goalCurrent >= goalTarget;
+
   return (
     <div
-      className={`relative w-full h-full overflow-hidden pointer-events-none select-none ${
-        isPreview ? 'bg-transparent' : 'bg-transparent min-h-screen'
+      className={`relative w-full h-full overflow-hidden select-none ${
+        isPreview ? 'bg-slate-950/90 rounded-2xl border border-slate-800 p-4 min-h-[460px]' : 'bg-transparent min-h-screen pointer-events-none'
       }`}
     >
+      {/* 4b. METAS DE REGALOS: Barra de progreso configurable */}
+      {showGoal && (
+        <div className="absolute top-4 left-6 z-40 max-w-[320px] w-full">
+          <div className="p-3 rounded-xl bg-slate-950/85 border border-cyan-500/40 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-white tracking-tight">
+                <Target className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{goalTitle}</span>
+              </div>
+              <span className="font-mono text-[11px] text-cyan-300 font-bold tabular-nums">
+                {goalCurrent.toLocaleString()} / {goalTarget.toLocaleString()} 💎
+              </span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="relative w-full bg-slate-900/90 h-3 rounded-full overflow-hidden border border-slate-800">
+              <div
+                className={`h-full transition-all duration-500 rounded-full ${
+                  isGoalCompleted
+                    ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 animate-pulse shadow-[0_0_12px_rgba(234,179,8,0.8)]'
+                    : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]'
+                }`}
+                style={{ width: `${goalPercentage}%` }}
+              />
+            </div>
+
+            {/* Percentage & Completed Indicator */}
+            <div className="flex items-center justify-between mt-1 text-[10px] font-mono">
+              <span className={isGoalCompleted ? 'text-amber-300 font-bold' : 'text-slate-400'}>
+                {isGoalCompleted ? '🎉 ¡META CUMPLIDA!' : `${goalPercentage}% completado`}
+              </span>
+              <span className="text-slate-500">
+                Faltan: {Math.max(0, goalTarget - goalCurrent).toLocaleString()} 💎
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4c. TOP DONADORES: Ranking persistente de los 5 mayores donantes */}
+      {showTopDonors && topDonors.length > 0 && (
+        <div className="absolute bottom-6 left-6 z-40 max-w-[280px] w-full">
+          <div className="p-3.5 rounded-xl bg-slate-950/85 border border-amber-500/30 shadow-xl backdrop-blur-md">
+            <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80 mb-2">
+              <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>Top Donadores de la Sesión</span>
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">Top 5</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {topDonors.map((donor, idx) => (
+                <div
+                  key={`${donor.username}-${idx}`}
+                  className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-900/60 border border-slate-800/50"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`font-mono font-bold text-[11px] w-4 ${
+                        idx === 0
+                          ? 'text-amber-300'
+                          : idx === 1
+                          ? 'text-slate-300'
+                          : idx === 2
+                          ? 'text-amber-600'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                    </span>
+                    <span className="font-semibold text-white truncate text-[11px]">
+                      @{donor.username}
+                    </span>
+                  </div>
+                  <span className="font-mono text-cyan-300 font-bold tabular-nums text-[11px] shrink-0">
+                    {donor.points.toLocaleString()} 💎
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active Overlay Alerts */}
       {activeOverlays.map(({ id, payload }) => {
         const { effect, formattedTitle, formattedSubtitle, event } = payload;
@@ -203,11 +398,11 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
             key={id}
             className={`absolute z-50 ${posClass} transition-all duration-300 transform scale-100 animate-in fade-in zoom-in-95`}
           >
-            {/* Cyber / Golden Alert Box */}
+            {/* Cyber Alert Box */}
             <div
               className="relative px-6 py-4 rounded-xl border shadow-2xl backdrop-blur-md flex items-center gap-4 min-w-[360px] max-w-[540px]"
               style={{
-                backgroundColor: 'rgba(11, 15, 25, 0.92)',
+                backgroundColor: 'rgba(11, 15, 25, 0.94)',
                 borderColor: effect.primaryColor,
                 boxShadow: `0 0 35px ${effect.primaryColor}55, 0 10px 25px rgba(0,0,0,0.8)`,
               }}
@@ -287,7 +482,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
         );
       })}
 
-      {/* OBS Clean Standalone watermark helper (only if no active overlay in standalone mode) */}
+      {/* Watermark helper in standalone OBS mode */}
       {!isPreview && activeOverlays.length === 0 && (
         <div className="absolute top-4 right-4 flex items-center gap-2 text-[11px] font-mono text-slate-500/60 bg-black/40 px-3 py-1.5 rounded-lg border border-slate-800/60">
           <Radio className="w-3.5 h-3.5 text-emerald-500" />
@@ -297,3 +492,4 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
     </div>
   );
 };
+export default ObsOverlayScreen;

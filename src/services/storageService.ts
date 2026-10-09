@@ -3,7 +3,9 @@ import {
   AutomationRule,
   ConnectionConfig,
   ExecutionLog,
+  LeaderboardEntry,
   OverlayEffect,
+  StreamCounter,
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -12,6 +14,8 @@ const STORAGE_KEYS = {
   SETTINGS: 'livetrigger_settings_v1',
   CONNECTION: 'livetrigger_conn_v1',
   HISTORY: 'livetrigger_history_v1',
+  COUNTERS: 'livetrigger_counters_v1',
+  LEADERBOARD: 'livetrigger_leaderboard_v1',
 };
 
 export const DEFAULT_EFFECTS: OverlayEffect[] = [
@@ -256,6 +260,52 @@ export const DEFAULT_CONNECTION: ConnectionConfig = {
   pingMs: 18,
 };
 
+export const DEFAULT_COUNTERS: StreamCounter[] = [
+  {
+    id: 'cnt-diamonds',
+    name: 'Meta de Diamantes',
+    current: 320,
+    target: 500,
+    unit: '💎',
+    lastUpdated: Date.now(),
+  },
+  {
+    id: 'cnt-likes',
+    name: 'Meta de Likes',
+    current: 14200,
+    target: 20000,
+    unit: '❤️',
+    lastUpdated: Date.now(),
+  },
+];
+
+export const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [
+  {
+    userId: '1',
+    username: 'AstroVIP',
+    nickname: 'Astro VIP',
+    points: 1250,
+    giftsCount: 14,
+    lastUpdated: Date.now(),
+  },
+  {
+    userId: '2',
+    username: 'RosaFan',
+    nickname: 'Rosa Fan',
+    points: 680,
+    giftsCount: 22,
+    lastUpdated: Date.now(),
+  },
+  {
+    userId: '3',
+    username: 'LionKing',
+    nickname: 'Rey León',
+    points: 500,
+    giftsCount: 3,
+    lastUpdated: Date.now(),
+  },
+];
+
 export class StorageService {
   public static getRules(): AutomationRule[] {
     try {
@@ -383,11 +433,47 @@ export class StorageService {
     }
   }
 
+  public static getCounters(): StreamCounter[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.COUNTERS);
+      if (!data) {
+        this.saveCounters(DEFAULT_COUNTERS);
+        return DEFAULT_COUNTERS;
+      }
+      return JSON.parse(data);
+    } catch {
+      return DEFAULT_COUNTERS;
+    }
+  }
+
+  public static saveCounters(counters: StreamCounter[]) {
+    localStorage.setItem(STORAGE_KEYS.COUNTERS, JSON.stringify(counters));
+  }
+
+  public static getLeaderboard(): LeaderboardEntry[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.LEADERBOARD);
+      if (!data) {
+        this.saveLeaderboard(DEFAULT_LEADERBOARD);
+        return DEFAULT_LEADERBOARD;
+      }
+      return JSON.parse(data);
+    } catch {
+      return DEFAULT_LEADERBOARD;
+    }
+  }
+
+  public static saveLeaderboard(leaderboard: LeaderboardEntry[]) {
+    localStorage.setItem(STORAGE_KEYS.LEADERBOARD, JSON.stringify(leaderboard));
+  }
+
   public static resetToFactoryDefaults() {
     this.saveRules(DEFAULT_RULES);
     this.saveEffects(DEFAULT_EFFECTS);
     this.saveSettings(DEFAULT_SETTINGS);
     this.saveConnection(DEFAULT_CONNECTION);
+    this.saveCounters(DEFAULT_COUNTERS);
+    this.saveLeaderboard(DEFAULT_LEADERBOARD);
     this.clearHistory();
   }
 }

@@ -19,6 +19,8 @@ import {
   Cpu,
   CheckCircle2,
   XCircle,
+  Eye,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -30,6 +32,8 @@ import {
   StreamCounter,
 } from '../../types';
 import { apiService, TestSuiteResult } from '../../services/apiService';
+import { StorageService } from '../../services/storageService';
+import { OverlayPreviewModal } from '../overlay/OverlayPreviewModal';
 
 interface DashboardViewProps {
   rules: AutomationRule[];
@@ -60,6 +64,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [testResults, setTestResults] = useState<TestSuiteResult | null>(null);
   const [isRunningTests, setIsRunningTests] = useState(false);
+  const [isOverlayPreviewOpen, setIsOverlayPreviewOpen] = useState(false);
+  const [eulerConfigured, setEulerConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiService.getConnectionWithMeta().then((res) => {
+      if (res && res.meta) {
+        setEulerConfigured(Boolean(res.meta.eulerStreamConfigured));
+      }
+    });
+  }, [connection]);
 
   const activeRules = rules.filter((r) => r.enabled);
   const totalExecutions = history.filter((h) => h.overallStatus === 'executed').length;
@@ -119,35 +133,96 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Quick action buttons */}
-        <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap">
+        <div className="flex items-center gap-2.5 w-full lg:w-auto flex-wrap">
+          <button
+            onClick={() => setIsOverlayPreviewOpen(true)}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold text-cyan-200 bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-500/40 rounded-lg shadow-sm transition-colors"
+          >
+            <Eye className="w-4 h-4 text-cyan-400" />
+            <span>Vista Previa Overlay</span>
+          </button>
           <button
             onClick={handleRunTests}
             disabled={isRunningTests}
             className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
           >
             <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            <span>{isRunningTests ? 'Verificando...' : 'Pruebas Automatizadas'}</span>
+            <span>{isRunningTests ? 'Verificando...' : 'Pruebas'}</span>
           </button>
           <button
             onClick={onFireQuickTest}
-            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-slate-900 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-950/40 transition-colors"
+            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-900 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-950/40 transition-colors"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Disparar Evento Demo</span>
+            <span>Evento Demo</span>
           </button>
           <button
             onClick={onToggleMaster}
-            className={`flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+            className={`flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors ${
               settings.masterAutomationEnabled
                 ? 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500'
             }`}
           >
             <Play className="w-4 h-4" />
-            <span>{settings.masterAutomationEnabled ? 'Pausar Motor' : 'Reanudar'}</span>
+            <span>{settings.masterAutomationEnabled ? 'Pausar' : 'Reanudar'}</span>
           </button>
         </div>
       </div>
+
+      {/* 4e. Indicador Claro de Modo de Conexión & Alerta de EULER_STREAM_API_KEY */}
+      {connection.mode === 'simulation' ? (
+        <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-cyan-300 font-bold">MODO SIMULACIÓN CONTROLADA ACTIVO</span>
+            <span className="text-slate-400 hidden md:inline">
+              · Los eventos se originan en el simulador local sin transmitir credenciales a TikTok.
+            </span>
+          </div>
+          <button
+            onClick={() => onNavigate('connections')}
+            className="text-cyan-400 hover:text-cyan-300 font-semibold underline text-left sm:text-right"
+          >
+            Conectar transmisión real →
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-emerald-300 font-bold">CONEXIÓN TIKTOK LIVE REAL</span>
+              <span className="text-slate-400">
+                · Canal: <strong className="text-white">@{connection.username || 'sin_configurar'}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-emerald-400 font-bold uppercase">{connection.status}</span>
+              <button
+                onClick={() => onNavigate('connections')}
+                className="text-cyan-400 hover:text-cyan-300 underline font-semibold ml-2"
+              >
+                Ajustar
+              </button>
+            </div>
+          </div>
+
+          {eulerConfigured === false && (
+            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/50 flex items-start gap-3 text-xs text-amber-200 animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-bold block text-amber-300">
+                  Aviso de Estabilidad: Clave EULER_STREAM_API_KEY no configurada en el backend
+                </span>
+                <p className="text-[11px] text-amber-200/90 mt-0.5">
+                  Para firmar peticiones de TikTok LIVE con máxima disponibilidad en la nube y evitar bloqueos por rate limiting de TikTok, se recomienda configurar <code className="bg-amber-900/60 px-1 py-0.5 rounded text-amber-100 font-mono">EULER_STREAM_API_KEY</code> en las variables de entorno del servidor.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Automated Tests Banner Modal/Card */}
       {testResults && (
@@ -601,6 +676,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* 4d. Vista Previa Interactiva de Overlay dentro del Panel */}
+      <OverlayPreviewModal
+        isOpen={isOverlayPreviewOpen}
+        onClose={() => setIsOverlayPreviewOpen(false)}
+        effects={StorageService.getEffects()}
+      />
     </div>
   );
 };

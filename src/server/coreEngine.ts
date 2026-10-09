@@ -17,6 +17,8 @@ import { ITikTokConnector, ConnectorStatusEvent } from './connectors/types';
 import { TikTokConnectorFactory } from './connectors/connectorFactory';
 import { FailSafeManager } from './failSafeManager';
 import { SystemLogger } from './systemLogger';
+import { ActionExecutor } from './actionExecutor';
+import { SharedRuleEvaluator } from '../services/sharedRuleEvaluator';
 
 export interface SSEBroadcastMessage {
   type:
@@ -232,10 +234,7 @@ export class CoreAutomationEngine {
       return;
     }
 
-    const priorityWeight: Record<string, number> = { high: 3, medium: 2, low: 1 };
-    const sortedRules = [...rules].sort(
-      (a, b) => (priorityWeight[b.priority] || 1) - (priorityWeight[a.priority] || 1)
-    );
+    const sortedRules = SharedRuleEvaluator.sortRulesByPriority(rules);
 
     const evaluatedDetails: ExecutionLog['matchedRules'] = [];
     let anyExecuted = false;
@@ -247,8 +246,8 @@ export class CoreAutomationEngine {
         continue;
       }
 
-      // Check conditions
-      const condResult = this.checkConditions(event, rule);
+      // Check conditions via unified SharedRuleEvaluator
+      const condResult = SharedRuleEvaluator.checkConditions(event, rule);
       if (!condResult.passed) {
         evaluatedDetails.push({
           ruleId: rule.id,
@@ -293,14 +292,21 @@ export class CoreAutomationEngine {
         continue;
       }
 
-      // Execute actions
+      // Execute actions via modular ActionExecutor
       let executedActionsCount = 0;
       let ruleActionError: string | undefined;
 
       for (const action of rule.actions) {
         if (!action.enabled) continue;
         try {
-          await this.executeAction(action, event, effects, settings, targetUserId);
+          await ActionExecutor.executeAction(
+            action,
+            event,
+            effects,
+            settings,
+            targetUserId,
+            (msg, uid) => this.broadcast(msg, uid)
+          );
           executedActionsCount++;
         } catch (err: any) {
           this.totalErrors++;
@@ -356,335 +362,6 @@ export class CoreAutomationEngine {
     this.recordLog(event, evaluatedDetails, overallStatus, execTime, lastExecutionError, targetUserId);
   }
 
-  private checkConditions(event: TikTokEvent, rule: AutomationRule): { passed: boolean; reason: string } {
-    const c = rule.conditions || ({} as any);
-
-    if (event.type === 'gift') {
-      const diamonds = event.data.diamondCount || 0;
-      const repeat = event.data.repeatCount || 1;
-      const giftName = (event.data.giftName || '').toLowerCase().trim();
-
-      if (c.giftName && c.giftName !== 'all' && c.giftName.toLowerCase() !== 'cualquiera') {
-        if (!giftName.includes(c.giftName.toLowerCase().trim())) {
-          return { passed: false, reason: 'Filtro de nombre no coincide.' };
-        }
-      }
-
-      if (c.minDiamonds !== undefined && diamonds < c.minDiamonds) {
-        return { passed: false, reason: `Diamantes (${diamonds}) < ${c.minDiamonds}` };
-      }
-
-      if (c.maxDiamonds !== undefined && diamonds > c.maxDiamonds) {
-        return { passed: false, reason: `Diamantes (${diamonds}) > ${c.maxDiamonds}` };
-      }
-
-      if (c.minRepeatCount !== undefined && repeat < c.minRepeatCount) {
-        return { passed: false, reason: `Racha (${repeat}) < ${c.minRepeatCount}` };
-      }
-    }
-
-    if (event.type === 'comment') {
-      const text = (event.data.comment || '').toLowerCase().trim();
-      const keyword = (c.commentKeyword || '').toLowerCase().trim();
-
-      if (keyword) {
-        const matchType = c.commentMatchType || 'contains';
-        let match = false;
-        if (matchType === 'exact') match = text === keyword;
-        else if (matchType === 'starts_with') match = text.startsWith(keyword);
-        else match = text.includes(keyword);
-
-        if (!match) return { passed: false, reason: 'Palabra clave no coincide.' };
-      }
-    }
-
-    if (event.type === 'like') {
-      const likes = event.data.likeCount || 1;
-      if (c.minLikeCount !== undefined && likes < c.minLikeCount) {
-        return { passed: false, reason: 'Likes insuficientes.' };
-      }
-    }
-
-    // Role checks
-    if (c.userFilter && c.userFilter !== 'all') {
-      if (c.userFilter === 'subscribers' && !event.user.isSubscriber) return { passed: false, reason: 'Solo subs' };
-      if (c.userFilter === 'moderators' && !event.user.isModerator) return { passed: false, reason: 'Solo moderadores' };
-      if (c.userFilter === 'min_level' && (event.user.badgeLevel || 1) < (c.minSenderLevel || 1)) {
-        return { passed: false, reason: 'Nivel inferior al requerido' };
-      }
-    }
-
-    return { passed: true, reason: 'OK' };
-  }
-
-  private async executeAction(action: any, event: TikTokEvent, effects: OverlayEffect[], settings: any, targetUserId?: string) {
-    const formattedTitle = this.formatVariables(action.customMessageText || '{user} activó evento', event);
-
-    switch (action.type) {
-      case 'overlay_effect': {
-        const effect = effects.find((e) => e.id === action.effectId) || effects[0];
-        const title = this.formatVariables(effect.titleTemplate, event);
-        const subtitle = this.formatVariables(effect.subtitleTemplate, event);
-        const ttsText = effect.enableTTS ? this.formatVariables(effect.ttsTemplate, event) : undefined;
-
-        this.broadcast(
-          {
-            type: 'TRIGGER_ACTION',
-            payload: {
-              actionType: 'overlay_effect',
-              effect,
-              formattedTitle: title,
-              formattedSubtitle: subtitle,
-              ttsVoiceText: ttsText,
-              event,
-            },
-            timestamp: Date.now(),
-          },
-          targetUserId
-        );
-        break;
-      }
-
-      case 'sound_fx': {
-        this.broadcast(
-          {
-            type: 'TRIGGER_ACTION',
-            payload: {
-              actionType: 'sound_fx',
-              soundId: action.soundId || 'chime',
-              volume: action.volume ?? 80,
-              event,
-            },
-            timestamp: Date.now(),
-          },
-          targetUserId
-        );
-        break;
-      }
-
-      case 'tts_speech': {
-        const text = this.formatVariables(action.ttsTemplate || '{user} envió un regalo', event);
-        this.broadcast(
-          {
-            type: 'TRIGGER_ACTION',
-            payload: {
-              actionType: 'tts_speech',
-              text,
-              ttsSpeed: action.ttsSpeed || 1.0,
-              ttsVoice: action.ttsVoice,
-              event,
-            },
-            timestamp: Date.now(),
-          },
-          targetUserId
-        );
-        break;
-      }
-
-      case 'custom_message': {
-        this.broadcast(
-          {
-            type: 'TRIGGER_ACTION',
-            payload: {
-              actionType: 'custom_message',
-              message: formattedTitle,
-              event,
-            },
-            timestamp: Date.now(),
-          },
-          targetUserId
-        );
-        break;
-      }
-
-      case 'update_counter': {
-        this.handleCounterUpdate(action, event, targetUserId);
-        break;
-      }
-
-      case 'add_leaderboard_points': {
-        this.handleLeaderboardUpdate(action, event, targetUserId);
-        break;
-      }
-
-      case 'iot_device_order': {
-        await this.handleIoTDeviceOrder(action, event);
-        break;
-      }
-
-      case 'webhook_post': {
-        await this.handleWebhookPost(action, event);
-        break;
-      }
-    }
-  }
-
-  private handleCounterUpdate(action: any, event: TikTokEvent, targetUserId?: string) {
-    const counters = StateStore.getCounters(targetUserId);
-    const targetCounter = counters.find((c) => c.id === action.counterId) || counters[0];
-
-    if (!targetCounter) return;
-
-    let delta = 1;
-    if (action.counterAmount === 'event_diamonds') {
-      delta = event.data.diamondCount || 1;
-    } else if (action.counterAmount === 'event_amount') {
-      delta = event.data.repeatCount || 1;
-    } else if (typeof action.counterAmount === 'number') {
-      delta = action.counterAmount;
-    }
-
-    if (action.counterOperation === 'reset') {
-      targetCounter.current = 0;
-    } else if (action.counterOperation === 'set') {
-      targetCounter.current = delta;
-    } else {
-      targetCounter.current += delta;
-    }
-
-    targetCounter.lastUpdated = Date.now();
-    StateStore.saveCounters(counters, targetUserId);
-
-    this.broadcast(
-      {
-        type: 'COUNTERS_UPDATED',
-        payload: counters,
-        timestamp: Date.now(),
-      },
-      targetUserId
-    );
-  }
-
-  private handleLeaderboardUpdate(action: any, event: TikTokEvent, targetUserId?: string) {
-    const leaderboard = StateStore.getLeaderboard(targetUserId);
-    let entry = leaderboard.find((l) => l.userId === event.user.id || l.username === event.user.username);
-
-    let pointsToAdd = 10;
-    if (action.leaderboardPoints === 'event_diamonds') {
-      pointsToAdd = event.data.diamondCount || 10;
-    } else if (typeof action.leaderboardPoints === 'number') {
-      pointsToAdd = action.leaderboardPoints;
-    }
-
-    if (!entry) {
-      entry = {
-        userId: event.user.id,
-        username: event.user.username,
-        nickname: event.user.nickname,
-        points: pointsToAdd,
-        giftsCount: event.type === 'gift' ? 1 : 0,
-        lastUpdated: Date.now(),
-      };
-      leaderboard.push(entry);
-    } else {
-      entry.points += pointsToAdd;
-      if (event.type === 'gift') entry.giftsCount += (event.data.repeatCount || 1);
-      entry.lastUpdated = Date.now();
-    }
-
-    // Sort descending by points
-    leaderboard.sort((a, b) => b.points - a.points);
-    const topLeaderboard = leaderboard.slice(0, 50);
-    StateStore.saveLeaderboard(topLeaderboard, targetUserId);
-
-    this.broadcast(
-      {
-        type: 'LEADERBOARD_UPDATED',
-        payload: topLeaderboard,
-        timestamp: Date.now(),
-      },
-      targetUserId
-    );
-  }
-
-  private async handleIoTDeviceOrder(action: any, event: TikTokEvent) {
-    if (!action.deviceEndpoint) return;
-
-    // SSRF runtime check
-    const ssrfCheck = SecurityValidator.isSafeExternalUrl(action.deviceEndpoint);
-    if (!ssrfCheck.safe) {
-      throw new Error(`SSRF Bloqueado: ${ssrfCheck.reason}`);
-    }
-
-    const controller = new AbortController();
-    const timeoutMs = typeof action.deviceTimeoutMs === 'number' ? Math.max(500, Math.min(8000, action.deviceTimeoutMs)) : 3000;
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-    const payload = action.deviceCommandPayload
-      ? this.formatVariables(action.deviceCommandPayload, event)
-      : JSON.stringify({ trigger: 'TikTokEvent', type: event.type, user: event.user.username });
-
-    try {
-      const res = await fetch(action.deviceEndpoint, {
-        method: action.deviceMethod || 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: action.deviceMethod === 'GET' ? undefined : payload,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Dispositivo IoT respondió con estado HTTP ${res.status} (${res.statusText})`);
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  private async handleWebhookPost(action: any, event: TikTokEvent) {
-    if (!action.webhookUrl) return;
-
-    // SSRF runtime check
-    const ssrfCheck = SecurityValidator.isSafeExternalUrl(action.webhookUrl);
-    if (!ssrfCheck.safe) {
-      throw new Error(`SSRF Bloqueado: ${ssrfCheck.reason}`);
-    }
-
-    const payload = action.webhookPayload
-      ? this.formatVariables(action.webhookPayload, event)
-      : JSON.stringify({
-          event,
-          timestamp: Date.now(),
-          source: 'LiveTrigger_AI',
-        });
-
-    let lastError: Error | null = null;
-    const maxRetries = 2;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-
-      try {
-        const res = await fetch(action.webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'User-Agent': 'LiveTrigger-Automation-Engine/1.2' },
-          body: payload,
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeout);
-
-        if (!res.ok) {
-          throw new Error(`Webhook devolvió error HTTP ${res.status}: ${res.statusText}`);
-        }
-
-        // Succeeded
-        return;
-      } catch (err: any) {
-        clearTimeout(timeout);
-        lastError = err instanceof Error ? err : new Error(String(err));
-        if (attempt < maxRetries) {
-          // Controlled backoff before retry
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-        }
-      }
-    }
-
-    if (lastError) {
-      throw lastError;
-    }
-  }
-
   private recordLog(
     event: TikTokEvent,
     matchedRules: ExecutionLog['matchedRules'],
@@ -699,7 +376,7 @@ export class CoreAutomationEngine {
       eventTimestamp: event.timestamp,
       source: event.source,
       eventType: event.type,
-      eventSummary: this.getSummary(event),
+      eventSummary: SharedRuleEvaluator.getEventSummary(event),
       senderName: event.user.nickname || event.user.username,
       matchedRules,
       overallStatus,
@@ -717,34 +394,6 @@ export class CoreAutomationEngine {
       },
       targetUserId
     );
-  }
-
-  private formatVariables(template: string, event: TikTokEvent): string {
-    return template
-      .replace(/\{user\}/gi, event.user.nickname || event.user.username)
-      .replace(/\{username\}/gi, event.user.username)
-      .replace(/\{gift\}/gi, event.data.giftName || 'Regalo')
-      .replace(/\{amount\}/gi, String(event.data.repeatCount || 1))
-      .replace(/\{diamonds\}/gi, String(event.data.diamondCount || 0))
-      .replace(/\{message\}/gi, event.data.comment || '')
-      .replace(/\{likes\}/gi, String(event.data.likeCount || 1));
-  }
-
-  private getSummary(event: TikTokEvent): string {
-    switch (event.type) {
-      case 'gift':
-        return `${event.data.repeatCount || 1}x ${event.data.giftName || 'Regalo'} (${event.data.diamondCount || 0} 💎)`;
-      case 'comment':
-        return `"${event.data.comment || ''}"`;
-      case 'like':
-        return `+${event.data.likeCount || 1} Likes`;
-      case 'follow':
-        return 'Nuevo Seguidor';
-      case 'share':
-        return 'Transmisión compartida';
-      default:
-        return 'Evento recibido';
-    }
   }
 
   // Connection management via decoupled ITikTokConnector (multi-user isolated)

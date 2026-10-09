@@ -192,9 +192,6 @@ PORT=3000
 # URL pública de la aplicación
 APP_URL="https://tu-dominio-stream.com"
 
-# API Key opcional si se habilitan funciones de resumen
-GEMINI_API_KEY=""
-
 # Modo por defecto: simulation o real_tiktok
 DEFAULT_CONNECTION_MODE="simulation"`}
                 </pre>

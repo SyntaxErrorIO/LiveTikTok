@@ -200,6 +200,19 @@ class ApiService {
     }
   }
 
+  public async getConnectionWithMeta(): Promise<{
+    connection: ConnectionConfig | null;
+    meta: { eulerStreamConfigured: boolean; directConnectorAvailable: boolean } | null;
+  }> {
+    try {
+      const res = await this.fetchWithAuth('/api/connection');
+      const data = await res.json();
+      return { connection: data.connection || null, meta: data.meta || null };
+    } catch {
+      return { connection: null, meta: null };
+    }
+  }
+
   public async saveConnectionConfig(config: Partial<ConnectionConfig>): Promise<ConnectionConfig | null> {
     try {
       const res = await this.fetchWithAuth('/api/connection/config', {
