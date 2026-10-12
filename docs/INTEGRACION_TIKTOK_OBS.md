@@ -47,25 +47,36 @@ LiveTrigger AI incluye un motor de overlay transparente optimizado para motores 
 
 ### URL de la Fuente de Navegador
 ```
-https://[TU_DOMINIO_O_LOCALHOST]/?mode=overlay
+https://[TU_DOMINIO_O_LOCALHOST]/?mode=overlay&overlayToken=[TU_OVERLAY_TOKEN]
 ```
-* **Sin credenciales privadas en la URL:** La URL no transporta claves de API privadas ni secretos que puedan filtrarse durante una captura de pantalla en vivo.
-* **Canal en Tiempo Real:** El overlay se comunica con el servidor backend mediante **Server-Sent Events (SSE)** en `/api/events/stream` y, a nivel de navegador local, a través de la API estándar **BroadcastChannel**.
+* **Token de Overlay Seguro y de Solo Lectura:** La URL incluye un `overlayToken` criptográfico generado por el servidor que asocia la fuente de OBS con el espacio de trabajo del creador sin exponer la contraseña ni el JWT de sesión administrativa.
+* **Sincronización Inicial de Estado (`GET /api/overlay/state`):** Al cargar la fuente de OBS, el cliente consulta automáticamente el estado del creador en el servidor (meta de diamantes acumulados y ranking de los top 5 donadores reales). Si no hay donaciones previas, la meta inicia en 0 y el ranking muestra claramente *"Aún no hay donadores"*.
+* **Persistencia Robusta en SQLite:** Todo el progreso de la meta y el ranking se almacena en SQLite en el servidor. Al recargar la fuente de navegador en OBS o reiniciar la escena, los datos continúan intactos sin depender del `localStorage` de la máquina.
+* **Canal en Tiempo Real sin Bloqueos:** El overlay se comunica con el servidor backend mediante **Server-Sent Events (SSE)** en `/api/events/stream?overlayToken=...` usando `fetch()` con `ReadableStream` y reconexión automática con retroceso exponencial.
 
 ### Pasos de Configuración en OBS Studio
-1. Abre OBS Studio y selecciona la Escena donde desees mostrar las alertas.
-2. En el panel **Fuentes (Sources)**, haz clic en **+** y añade una fuente **Navegador (Browser)**.
-3. Asigna un nombre descriptivo: `LiveTrigger Alertas`.
-4. En el campo **URL**, pega la URL con el parámetro `?mode=overlay`.
-5. Configura las dimensiones del lienzo:
+1. Inicia sesión en el panel de LiveTrigger AI y ve a la sección **Ajustes** (o haz clic en el modal **Guía OBS Studio**).
+2. Copia tu **URL Privada para Fuente de Navegador en OBS** (contiene tu `overlayToken`).
+3. En OBS Studio, selecciona la escena donde desees mostrar las alertas y el overlay interactivo.
+4. En el panel **Fuentes (Sources)**, haz clic en **+** y añade una fuente **Navegador (Browser)** con el nombre `LiveTrigger Overlay`.
+5. Pega la URL copiada y configura las dimensiones recomendadas:
    - **Ancho:** `1920`
    - **Alto:** `1080`
    - **FPS:** `60`
 6. Marca las casillas:
-   - *Controlar audio a través de OBS* (para ecualizar o silenciar las alertas desde el mezclador de OBS).
+   - *Controlar audio a través de OBS* (para controlar el nivel de audio y alertas sonoras desde el mezclador de OBS).
    - *Actualizar el navegador cuando la escena se active*.
-   - *Cerrar la fuente cuando no sea visible*.
 7. Haz clic en **Aceptar**.
+
+### Pruebas del Overlay en OBS
+Para comprobar que el overlay en OBS recibe las alertas y actualiza la meta en vivo:
+1. Con OBS abierto mostrando la fuente de navegador, dirígete a la pestaña **Simulador** en el panel de control de LiveTrigger AI.
+2. Haz clic en el botón de disparo rápido **🌌 Galaxia (1K💎)** o **🦁 León (30K💎)**.
+3. Observa en OBS:
+   - La alerta visual y animación de partículas aparecerán de inmediato.
+   - La barra de la **Meta de Diamantes** incrementará su progreso en tiempo real.
+   - El donador simulado ingresará automáticamente al ranking de los **Top Donadores**.
+4. Haz clic derecho en la fuente de OBS y pulsa **Actualizar caché de la página actual**. Comprobarás que la meta y los donadores se mantienen persistentes.
 
 ---
 

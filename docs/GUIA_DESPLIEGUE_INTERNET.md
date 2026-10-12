@@ -35,11 +35,14 @@ LiveTrigger AI está diseñado como una plataforma **monolítica desacoplada y c
     │  └───────────────────────┬───────────────────────────────┘  │
     │                          │                                  │
     │  ┌───────────────────────▼───────────────────────────────┐  │
-    │  │        Capa de Persistencia y Base de Datos           │  │
+    │  │        Capa de Persistencia SQLite (better-sqlite3)   │  │
     │  │      (/app/data montado en volumen persistente)       │  │
-    │  │   • users.json        • audit_log.json                │  │
-    │  │   • rules.json        • backups/ (snapshots)          │  │
-    │  │   • settings.json     • workspaces/ (cuentas de user) │  │
+    │  │   • livetrigger.db    • backups/ (snapshots)          │  │
+    │  │     - users             - rules                       │  │
+    │  │     - settings          - connection                  │  │
+    │  │     - counters          - leaderboard                 │  │
+    │  │     - logs              - audit_logs                  │  │
+    │  │   • Migración automática desde archivos JSON previos │  │
     │  └───────────────────────────────────────────────────────┘  │
     └─────────────────────────────────────────────────────────────┘
 ```
@@ -102,6 +105,7 @@ PORT=3000
 NODE_ENV=production
 
 # Clave secreta para tokens de autenticación JWT (Generar con: openssl rand -hex 32)
+# La sesión administrativa se emite mediante Cookie HttpOnly (SameSite=Strict, Secure en producción)
 JWT_SECRET=c1f4e09f87b8d65421ac7a892b45e7f1234abcd567890ef123456789abcdef01
 
 # Credenciales de la cuenta administradora inicial (REEMPLAZA con tu propia clave secreta única)
@@ -112,9 +116,17 @@ ADMIN_PASSWORD=Reemplazar_Con_Tu_Contrasena_Robusta_Unica_Minimo_10_Chars
 # Clave de validación para webhooks externos (opcional pero recomendada)
 TIKTOK_WEBHOOK_SECRET=token_aleatorio_para_webhooks_externos
 
-# Directorio de persistencia
+# Directorio de persistencia para SQLite (livetrigger.db) y respaldos
 DATA_DIR=/app/data
+
+# Orígenes adicionales permitidos para incrustar en iframe (CSP frame-ancestors)
+ALLOWED_FRAME_ANCESTORS=https://ai.google.dev https://aistudio.google.com
 ```
+
+### Seguridad de Sesión y Protección CSRF
+* **JWT fuera de `localStorage`**: El token de sesión administrativa no se guarda en el almacenamiento local del navegador, evitando filtraciones por vulnerabilidades XSS. Se gestiona mediante una cookie `HttpOnly`, `SameSite=Strict` y `Secure` en producción.
+* **Protección CSRF**: Toda petición que modifica el estado (`POST`, `PUT`, `DELETE`, `PATCH`) transmitida con sesión de cookie exige la cabecera personalizada `X-CSRF-Token`, bloqueando ataques cruzados de navegación sin afectar webhooks ni integraciones que emplean `Authorization: Bearer`.
+* **Content Security Policy (CSP)**: En producción, `script-src` opera sin `'unsafe-inline'` ni `'unsafe-eval'` mediante nonces criptográficos por solicitud, y `frame-ancestors` está restringido a `'self'` y a los orígenes definidos en `ALLOWED_FRAME_ANCESTORS`.
 
 ---
 

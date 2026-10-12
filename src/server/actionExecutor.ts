@@ -1,4 +1,5 @@
 import { OverlayEffect, TikTokEvent, RuleAction } from '../types';
+import { DEFAULT_EFFECTS } from '../services/storageService';
 import { StateStore } from './stateStore';
 import { SecurityValidator } from './securityValidator';
 import { SharedRuleEvaluator } from '../services/sharedRuleEvaluator';
@@ -23,11 +24,15 @@ export class ActionExecutor {
 
     switch (action.type) {
       case 'overlay_effect': {
-        const effect = effects.find((e) => e.id === action.effectId) || effects[0];
-        const title = SharedRuleEvaluator.formatTemplate(effect.titleTemplate, event);
-        const subtitle = SharedRuleEvaluator.formatTemplate(effect.subtitleTemplate, event);
+        const effect = effects.find((e) => e.id === action.effectId) ||
+          effects[0] ||
+          DEFAULT_EFFECTS.find((e) => e.id === action.effectId) ||
+          DEFAULT_EFFECTS[0];
+        if (!effect) break;
+        const title = SharedRuleEvaluator.formatTemplate(effect.titleTemplate || '{user}', event);
+        const subtitle = SharedRuleEvaluator.formatTemplate(effect.subtitleTemplate || '', event);
         const ttsText = effect.enableTTS
-          ? SharedRuleEvaluator.formatTemplate(effect.ttsTemplate, event)
+          ? SharedRuleEvaluator.formatTemplate(effect.ttsTemplate || '', event)
           : undefined;
 
         broadcast(

@@ -16,6 +16,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Es obligatorio definir ADMIN_PASSWORD en el archivo .env (minimo 10 caracteres)}
       - TIKTOK_WEBHOOK_SECRET=${TIKTOK_WEBHOOK_SECRET:-}
       - EULER_STREAM_API_KEY=${EULER_STREAM_API_KEY:-}
+      - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
       - DATA_DIR=/app/data
     volumes:
       - livetrigger_data:/app/data

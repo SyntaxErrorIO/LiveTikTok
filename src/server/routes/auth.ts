@@ -20,6 +20,17 @@ router.post('/register', authLimiter, (req: Request, res: Response) => {
   if (!result.success) {
     return res.status(400).json(result);
   }
+
+  if (result.token) {
+    res.cookie('livetrigger_session', result.token, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+  }
+
   return res.json(result);
 });
 
@@ -30,7 +41,29 @@ router.post('/login', authLimiter, (req: Request, res: Response) => {
   if (!result.success) {
     return res.status(401).json(result);
   }
+
+  if (result.token) {
+    res.cookie('livetrigger_session', result.token, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+  }
+
   return res.json(result);
+});
+
+// User Logout (Clears HttpOnly Session Cookie)
+router.post('/logout', (req: Request, res: Response) => {
+  res.clearCookie('livetrigger_session', {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
+  return res.json({ success: true, message: 'Sesión cerrada exitosamente.' });
 });
 
 // Get Current User Profile (Requires Authentication)

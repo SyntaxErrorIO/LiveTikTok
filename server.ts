@@ -2,11 +2,12 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import { coreEngine } from './src/server/coreEngine';
 import { StateStore } from './src/server/stateStore';
 import { SystemLogger } from './src/server/systemLogger';
 import { securityHeaders } from './src/server/middleware/securityHeaders';
-import { extractUser } from './src/server/middleware/auth';
+import { extractUser, csrfProtection } from './src/server/middleware/auth';
 
 // Modular Express Routers
 import authRoutes from './src/server/routes/auth';
@@ -28,13 +29,17 @@ const isProd = process.env.NODE_ENV === 'production';
 // 1. Comprehensive Security Headers (CSP, no X-XSS-Protection, HSTS, Sniff protection)
 app.use(securityHeaders(isProd));
 
-// 2. Body Parser
+// 2. Body Parser & Cookie Parser
 app.use(express.json({ limit: '2mb' }));
+app.use(cookieParser());
 
-// 3. User Session Extraction (Authorization header only)
+// 3. User Session Extraction (Authorization header or HttpOnly session cookie)
 app.use(extractUser);
 
-// 4. Mount Modular API Routes
+// 4. CSRF Protection for state-changing requests relying on ambient credentials
+app.use(csrfProtection);
+
+// 5. Mount Modular API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/rules', rulesRoutes);
 app.use('/api/connection', connectionRoutes);

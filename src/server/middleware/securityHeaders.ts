@@ -1,15 +1,24 @@
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 
 export const securityHeaders = (isProd: boolean) => {
   return (_req: Request, res: Response, next: NextFunction) => {
+    // Generate per-request cryptographically secure nonce for CSP
+    const nonce = crypto.randomBytes(16).toString('base64');
+    try {
+      res.locals = res.locals || {};
+      res.locals.cspNonce = nonce;
+    } catch {}
+
     // 1. Content Security Policy (CSP)
     const extraFrameAncestors = (process.env.ALLOWED_FRAME_ANCESTORS || process.env.FRAME_ANCESTORS)?.trim();
     const frameAncestorsDirective = extraFrameAncestors
       ? `frame-ancestors 'self' ${extraFrameAncestors}`
       : "frame-ancestors 'self'";
 
+    // In production: strictly no 'unsafe-inline' and no 'unsafe-eval'; nonce-based script execution
     const scriptDirective = isProd
-      ? "script-src 'self' 'unsafe-inline'"
+      ? `script-src 'self' 'nonce-${nonce}'`
       : "script-src 'self' 'unsafe-inline'";
 
     const cspPolicy = [

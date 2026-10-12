@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { StateStore } from './stateStore';
 import { SystemLogger } from './systemLogger';
 
 export interface UserAccount {
@@ -67,10 +68,16 @@ export class AuthManager {
 
   public static init() {
     this.ensureDataDir();
-    if (fs.existsSync(USERS_FILE)) {
+    const sqliteUsers = StateStore.getUsers();
+    if (sqliteUsers && sqliteUsers.length > 0) {
+      this.users = sqliteUsers;
+    } else if (fs.existsSync(USERS_FILE)) {
       try {
         const raw = fs.readFileSync(USERS_FILE, 'utf-8');
         this.users = JSON.parse(raw);
+        if (this.users.length > 0) {
+          StateStore.saveAllUsers(this.users);
+        }
       } catch {
         this.users = [];
       }
@@ -146,6 +153,7 @@ export class AuthManager {
   private static saveUsers() {
     this.ensureDataDir();
     try {
+      StateStore.saveAllUsers(this.users);
       fs.writeFileSync(USERS_FILE, JSON.stringify(this.users, null, 2), 'utf-8');
     } catch {}
   }

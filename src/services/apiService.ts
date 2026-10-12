@@ -51,7 +51,9 @@ class ApiService {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.authToken = localStorage.getItem('livetrigger_auth_token');
+      try {
+        localStorage.removeItem('livetrigger_auth_token');
+      } catch {}
     }
     this.initSSE();
   }
@@ -62,23 +64,24 @@ class ApiService {
 
   public setAuthToken(token: string | null) {
     this.authToken = token;
-    if (typeof window !== 'undefined') {
-      if (token) {
-        localStorage.setItem('livetrigger_auth_token', token);
-      } else {
-        localStorage.removeItem('livetrigger_auth_token');
-      }
-    }
-    // Re-connect SSE with authenticated token
+    // Re-connect SSE with updated session
     this.initSSE();
   }
 
   private async fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
     const headers = new Headers(options.headers || {});
+    // Client-side custom CSRF protection header
+    if (!headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', '1');
+    }
     if (this.authToken && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${this.authToken}`);
     }
-    return fetch(url, { ...options, headers });
+    return fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
   }
 
   public initSSE() {
@@ -118,6 +121,7 @@ class ApiService {
           const response = await fetch(streamUrl, {
             method: 'GET',
             headers,
+            credentials: 'include',
             signal: controller.signal,
           });
 
@@ -518,7 +522,8 @@ class ApiService {
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '1' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -535,7 +540,8 @@ class ApiService {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '1' },
+        credentials: 'include',
         body: JSON.stringify({ identifier, password }),
       });
       const data = await res.json();
@@ -559,7 +565,14 @@ class ApiService {
     }
   }
 
-  public logout() {
+  public async logout(): Promise<void> {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': '1' },
+        credentials: 'include',
+      });
+    } catch {}
     this.setAuthToken(null);
   }
 

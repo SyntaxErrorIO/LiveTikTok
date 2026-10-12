@@ -1471,6 +1471,222 @@ async function runAllTests() {
     }
   });
 
+  // 39. Extracción de sesión por Cookie HttpOnly y compatibilidad con Authorization Header
+  await test('39. Seguridad: Extracción de sesión por Cookie HttpOnly y compatibilidad con Bearer', async () => {
+    const { extractUser } = await import('../src/server/middleware/auth');
+    const token = AuthManager.createToken({
+      id: 'usr-cookie-tester',
+      username: 'cookie_tester',
+      email: 'cookie@test.local',
+      role: 'streamer',
+      passwordHash: 'hash',
+      passwordSalt: 'salt',
+      overlayToken: 'ovl-cookie-99',
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+    });
+
+    // 1. Extracción mediante cookie
+    const reqWithCookie: any = {
+      headers: {
+        cookie: `livetrigger_session=${token}; other_cookie=xyz`,
+      },
+    };
+    extractUser(reqWithCookie, {} as any, () => {});
+    assert(reqWithCookie.user?.userId === 'usr-cookie-tester', 'Debe extraer el usuario desde la cookie livetrigger_session');
+    assert(reqWithCookie.authSource === 'cookie', 'Debe marcar el origen de autenticación como cookie');
+
+    // 2. Extracción mediante req.cookies (cookie-parser parseado)
+    const reqWithParsedCookies: any = {
+      headers: {},
+      cookies: { livetrigger_session: token },
+    };
+    extractUser(reqWithParsedCookies, {} as any, () => {});
+    assert(reqWithParsedCookies.user?.userId === 'usr-cookie-tester', 'Debe extraer el usuario desde req.cookies');
+
+    // 3. Prioridad de Authorization: Bearer
+    const reqWithBoth: any = {
+      headers: {
+        authorization: `Bearer ${token}`,
+        cookie: 'livetrigger_session=invalid-token',
+      },
+    };
+    extractUser(reqWithBoth, {} as any, () => {});
+    assert(reqWithBoth.user?.userId === 'usr-cookie-tester', 'Authorization Bearer debe tener prioridad');
+    assert(reqWithBoth.authSource === 'header', 'Debe marcar el origen como header');
+  });
+
+  // 40. Protección CSRF obligatoria en peticiones de modificación con cookie
+  await test('40. Seguridad: Protección CSRF en POST/PUT/DELETE con cookie y excepción de Bearer', async () => {
+    const { csrfProtection } = await import('../src/server/middleware/auth');
+
+    // 1. Petición POST con cookie SIN cabecera personalizada -> 403 Forbidden
+    let blockedStatus = 0;
+    let blockedResult: any = null;
+    const reqBlocked: any = {
+      method: 'POST',
+      headers: { cookie: 'livetrigger_session=dummy' },
+      authSource: 'cookie',
+    };
+    const resBlocked: any = {
+      status: (code: number) => {
+        blockedStatus = code;
+        return { json: (d: any) => { blockedResult = d; } };
+      },
+    };
+    let nextCalled = false;
+    csrfProtection(reqBlocked, resBlocked, () => { nextCalled = true; });
+    assert(blockedStatus === 403, 'POST con cookie sin cabecera CSRF debe responder con 403');
+    assert(!nextCalled, 'No debe invocar next() cuando falla la protección CSRF');
+    assert(blockedResult?.success === false, 'Debe indicar success: false');
+
+    // 2. Petición POST con cookie CON cabecera X-CSRF-Token -> Permitido
+    let allowedWithToken = false;
+    const reqAllowed: any = {
+      method: 'POST',
+      headers: { cookie: 'livetrigger_session=dummy', 'x-csrf-token': '1' },
+      authSource: 'cookie',
+    };
+    csrfProtection(reqAllowed, {} as any, () => { allowedWithToken = true; });
+    assert(allowedWithToken, 'POST con cookie y X-CSRF-Token debe permitirse');
+
+    // 3. Petición POST con Authorization: Bearer (Webhook o API externa) -> Permitido sin CSRF
+    let allowedBearer = false;
+    const reqBearer: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer external-secret-token' },
+    };
+    csrfProtection(reqBearer, {} as any, () => { allowedBearer = true; });
+    assert(allowedBearer, 'Petición con Authorization Bearer debe ser inmune al requisito de cabecera CSRF');
+
+    // 4. Petición GET -> Métodos seguros siempre permitidos
+    let allowedGet = false;
+    const reqGet: any = {
+      method: 'GET',
+      headers: { cookie: 'livetrigger_session=dummy' },
+      authSource: 'cookie',
+    };
+    csrfProtection(reqGet, {} as any, () => { allowedGet = true; });
+    assert(allowedGet, 'Método GET debe permitirse sin restricción CSRF');
+  });
+
+  // 41. Persistencia SQLite con better-sqlite3 y aislamiento multiusuario
+  await test('41. Persistencia: Base de datos SQLite (better-sqlite3) con tablas y aislamiento multiusuario', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const db = StateStore.getDb();
+    assert(db !== null && db !== undefined, 'StateStore debe inicializar la instancia de base de datos SQLite');
+
+    // 1. Verificar existencia del archivo de base de datos
+    const dbFile = path.resolve(StateStore.getDataDirectory(), 'livetrigger.db');
+    assert(fs.existsSync(dbFile), 'El archivo livetrigger.db debe existir en DATA_DIR');
+
+    // 2. Verificar que las tablas existen
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
+    const tableNames = tables.map((t) => t.name);
+    ['users', 'rules', 'effects', 'settings', 'connection', 'counters', 'leaderboard', 'logs'].forEach((tbl) => {
+      assert(tableNames.includes(tbl), `La tabla "${tbl}" debe estar creada en SQLite`);
+    });
+
+    // 3. Aislamiento estricto de datos por user_id
+    const userA = 'usr-sq-alpha-' + Date.now();
+    const userB = 'usr-sq-beta-' + Date.now();
+
+    StateStore.saveCounters(
+      [{ id: 'cnt-a', name: 'Meta Alpha', current: 100, target: 500, unit: '💎', lastUpdated: Date.now() }],
+      userA
+    );
+    StateStore.saveCounters(
+      [{ id: 'cnt-b', name: 'Meta Beta', current: 200, target: 800, unit: '💎', lastUpdated: Date.now() }],
+      userB
+    );
+
+    const countersA = StateStore.getCounters(userA);
+    const countersB = StateStore.getCounters(userB);
+
+    assert(countersA.length === 1 && countersA[0].id === 'cnt-a' && countersA[0].current === 100, 'Datos de userA en SQLite deben ser aislados');
+    assert(countersB.length === 1 && countersB[0].id === 'cnt-b' && countersB[0].current === 200, 'Datos de userB en SQLite deben ser aislados');
+
+    // 4. Snapshots y Exportación funcionando sobre SQLite
+    const snapshot = StateStore.createSnapshot(userA, 'Snapshot de prueba SQLite');
+    assert(snapshot.id.startsWith('snap-'), 'createSnapshot debe generar snapshot válido respaldado en disco');
+    const exportedJson = StateStore.exportFullConfigJson(userA);
+    assert(exportedJson.includes('Meta Alpha'), 'exportFullConfigJson debe contener las entidades del usuario');
+  });
+
+  // 42. Content-Security-Policy sin 'unsafe-inline' en producción y con nonce
+  await test('42. Seguridad CSP: script-src sin unsafe-inline en producción y nonce dinámico generado', async () => {
+    const { securityHeaders } = await import('../src/server/middleware/securityHeaders');
+
+    // 1. En producción (isProd = true)
+    const prodHeaders: Record<string, string> = {};
+    const mockProdRes: any = {
+      locals: {},
+      setHeader: (name: string, value: string) => { prodHeaders[name.toLowerCase()] = value; },
+      removeHeader: () => {},
+    };
+    const prodMiddleware = securityHeaders(true);
+    prodMiddleware({} as any, mockProdRes, () => {});
+
+    const prodCsp = prodHeaders['content-security-policy'];
+    const scriptSrcPart = prodCsp.split(';').find((p: string) => p.trim().startsWith('script-src')) || '';
+    assert(!scriptSrcPart.includes("'unsafe-inline'"), "script-src NO debe contener 'unsafe-inline' en producción");
+    assert(!scriptSrcPart.includes("'unsafe-eval'"), "script-src NO debe contener 'unsafe-eval' en producción");
+    assert(scriptSrcPart.includes("'nonce-"), "script-src debe utilizar un nonce criptográfico en producción");
+    assert(typeof mockProdRes.locals.cspNonce === 'string', 'Debe generar y asignar res.locals.cspNonce');
+
+    // 2. En desarrollo (isProd = false)
+    const devHeaders: Record<string, string> = {};
+    const mockDevRes: any = {
+      locals: {},
+      setHeader: (name: string, value: string) => { devHeaders[name.toLowerCase()] = value; },
+      removeHeader: () => {},
+    };
+    const devMiddleware = securityHeaders(false);
+    devMiddleware({} as any, mockDevRes, () => {});
+
+    const devCsp = devHeaders['content-security-policy'];
+    const devScriptSrcPart = devCsp.split(';').find((p: string) => p.trim().startsWith('script-src')) || '';
+    assert(devScriptSrcPart.includes("'unsafe-inline'"), "script-src en desarrollo puede contener 'unsafe-inline' para Vite HMR");
+  });
+
+  // 43. Endpoint /api/auth/logout limpia cookie y validación de modularización de archivos (< 350 líneas)
+  await test('43. Arquitectura y Logout: Endpoint logout limpia cookie y archivos divididos a < 350 líneas', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    // 1. Endpoint /api/auth/logout limpia la cookie livetrigger_session
+    const { default: authRouter } = await import('../src/server/routes/auth');
+    const logoutLayer = (authRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/logout' && l.route.methods.post
+    );
+    assert(logoutLayer !== undefined, 'Ruta POST /api/auth/logout debe estar registrada');
+
+    let clearedCookieName = '';
+    let logoutJsonResult: any = null;
+    const mockRes: any = {
+      clearCookie: (name: string) => { clearedCookieName = name; },
+      json: (d: any) => { logoutJsonResult = d; },
+    };
+    logoutLayer.route.stack[0].handle({} as any, mockRes);
+    assert(clearedCookieName === 'livetrigger_session', 'POST /logout debe limpiar la cookie livetrigger_session');
+    assert(logoutJsonResult?.success === true, 'POST /logout debe devolver success: true');
+
+    // 2. Verificación de líneas de código (< 350 líneas por archivo)
+    const filesToCheck = [
+      'src/server/coreEngine.ts',
+      'src/components/settings/SettingsView.tsx',
+      'src/components/simulator/SimulatorView.tsx',
+      'src/components/automations/RuleEditorModal.tsx',
+    ];
+
+    for (const f of filesToCheck) {
+      const content = fs.readFileSync(path.resolve(process.cwd(), f), 'utf-8');
+      const lines = content.split('\n').length;
+      assert(lines < 350, `El archivo ${f} tiene ${lines} líneas y debe tener menos de 350 líneas`);
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
