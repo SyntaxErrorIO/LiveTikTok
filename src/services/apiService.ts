@@ -37,7 +37,7 @@ export interface SystemHealthReport {
   timestamp: string;
   memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
   engine: { totalProcessed: number; queuePending: number; totalErrors: number; totalDeduplicated: number };
-  connection: { mode: string; status: string; lastActivityAt: number; errorMessage?: string; pingMs?: number };
+  connection: { mode: string; status: string; lastActivityAt: number; errorMessage?: string; notice?: string; pingMs?: number; eulerStreamConfigured?: boolean };
   failSafe: { active: boolean; reason: string | null; triggeredAt: number | null; source: string | null };
   storage: { status: string; type: string };
 }

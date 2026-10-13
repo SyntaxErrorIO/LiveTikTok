@@ -60,7 +60,7 @@ export const ServerHealthCard: React.FC<ServerHealthCardProps> = ({
 
       <div className="space-y-4 text-xs">
         {/* Live Telemetry Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1">
             <span className="text-[10px] text-slate-400 font-medium block">Estado General</span>
             <div className="flex items-center gap-1.5 font-bold font-mono">
@@ -96,6 +96,13 @@ export const ServerHealthCard: React.FC<ServerHealthCardProps> = ({
           <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1">
             <span className="text-[10px] text-slate-400 font-medium block">Base de Datos</span>
             <span className="text-emerald-400 font-mono font-bold block">SQLite OK</span>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 font-medium block">Euler Stream</span>
+            <span className={`font-mono font-bold block ${health?.connection?.eulerStreamConfigured ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {health?.connection?.eulerStreamConfigured ? 'Configurado' : 'Sin Configurar'}
+            </span>
           </div>
         </div>
 

@@ -17,26 +17,26 @@ export const FORBIDDEN_PLACEHOLDER_SECRETS: readonly string[] = [
 ];
 
 /**
- * Determina si una clave o secreto contiene o coincide con un valor de ejemplo/relleno.
+ * Determina si una clave o secreto coincide con un valor de ejemplo o plantilla prohibida.
+ * Limitado estrictamente a:
+ * 1. Coincidencias exactas con la lista negra de plantillas (FORBIDDEN_PLACEHOLDER_SECRETS)
+ * 2. Prefijos de documentación y ejemplos de plantilla ("tu_" y "cambia_esta_")
+ *
+ * De este modo, contraseñas legítimas que contengan palabras comunes como "aqui"
+ * (ejemplo: "Aqui123456!" o "MiClaveAqui_2026!") NO son rechazadas erróneamente en producción.
  */
 export function isForbiddenPlaceholder(value?: string | null): boolean {
   if (!value) return false;
   const val = value.trim().toLowerCase();
   if (val.length === 0) return false;
 
-  // Coincidencia exacta con la lista negra
+  // 1. Coincidencia exacta con la lista negra de plantillas
   if (FORBIDDEN_PLACEHOLDER_SECRETS.some((forbidden) => val === forbidden.toLowerCase())) {
     return true;
   }
 
-  // Patrones típicos de placeholder en documentación
-  if (
-    val.startsWith('tu_') ||
-    val.includes('aqui') ||
-    val.includes('cambia_esta_clave') ||
-    val.includes('tu_contrasena') ||
-    val.includes('tu_clave')
-  ) {
+  // 2. Prefijos de documentación y ejemplos de plantilla
+  if (val.startsWith('tu_') || val.startsWith('cambia_esta_')) {
     return true;
   }
 

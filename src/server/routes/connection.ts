@@ -3,6 +3,7 @@ import { StateStore } from '../stateStore';
 import { coreEngine } from '../coreEngine';
 import { AuthedRequest } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { DirectTikTokConnector } from '../connectors/directTikTokConnector';
 
 const router = Router();
 
@@ -13,9 +14,7 @@ router.get('/', (req, res: Response) => {
   const authedReq = req as AuthedRequest;
   const userId = authedReq.user!.userId;
   const conn = StateStore.getConnection(userId);
-  const eulerConfigured = Boolean(
-    (process.env.EULER_STREAM_API_KEY || process.env.EULER_STREAM_KEY || process.env.SIGN_API_KEY || '').trim()
-  );
+  const eulerConfigured = Boolean(DirectTikTokConnector.getEffectiveEulerKey());
   return res.json({
     success: true,
     connection: conn,

@@ -229,6 +229,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
+          {/* Franja de aviso amarilla cuando exista connection.notice */}
+          {connection.notice && (
+            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/50 flex items-start gap-3 text-xs text-amber-200 animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-bold block text-amber-300">
+                  Aviso del Estado de Conexión
+                </span>
+                <p className="text-[11px] text-amber-200/90 mt-0.5">
+                  {connection.notice}
+                </p>
+              </div>
+            </div>
+          )}
+
           {eulerConfigured === false && (
             <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/50 flex items-start gap-3 text-xs text-amber-200 animate-in fade-in">
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />

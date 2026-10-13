@@ -7,6 +7,7 @@ import { AutomatedTestRunner } from '../testRunner';
 import { AuthManager } from '../authManager';
 import { AuthedRequest } from '../types';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { DirectTikTokConnector } from '../connectors/directTikTokConnector';
 
 const router = Router();
 
@@ -46,7 +47,9 @@ router.get(['/health', '/api/health'], (_req: Request, res: Response) => {
       status: conn.status,
       lastActivityAt: conn.lastActivityAt,
       errorMessage: conn.errorMessage,
+      notice: conn.notice,
       pingMs: conn.pingMs,
+      eulerStreamConfigured: Boolean(DirectTikTokConnector.getEffectiveEulerKey()),
     },
     failSafe,
     storage: {
@@ -58,7 +61,11 @@ router.get(['/health', '/api/health'], (_req: Request, res: Response) => {
 
 // Readiness Probe
 router.get(['/ready', '/api/ready'], (_req: Request, res: Response) => {
-  return res.json({ ready: true, uptime: process.uptime() });
+  return res.json({
+    ready: true,
+    uptime: process.uptime(),
+    eulerStreamConfigured: Boolean(DirectTikTokConnector.getEffectiveEulerKey()),
+  });
 });
 
 // Fail-Safe Status (Security fix: Now strictly requires authenticated session)

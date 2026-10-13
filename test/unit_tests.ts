@@ -2163,6 +2163,130 @@ async function runAllTests() {
     assert(envExample.includes('randomBytes'), '.env.example debe incluir instrucciones con randomBytes');
   });
 
+  // 57. Consistencia Euler: eulerStreamConfigured usa getEffectiveEulerKey en /api/connection, /api/ready y /health
+  await test('57. Consistencia Euler: eulerStreamConfigured usa getEffectiveEulerKey en /api/connection, /api/ready y /health', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { DirectTikTokConnector } = await import('../src/server/connectors/directTikTokConnector');
+    const { default: connectionRouter } = await import('../src/server/routes/connection');
+    const { default: systemRouter } = await import('../src/server/routes/system');
+
+    const prevEuler = process.env.EULER_STREAM_API_KEY;
+    try {
+      // Con clave de relleno, getEffectiveEulerKey es cadena vacía
+      process.env.EULER_STREAM_API_KEY = 'tu_clave_euler_stream_aqui';
+      assert(DirectTikTokConnector.getEffectiveEulerKey() === '', 'Con clave de relleno getEffectiveEulerKey debe ser vacía');
+
+      // Ruta /api/connection: GET / debe responder con eulerStreamConfigured: false
+      const connGetLayer = (connectionRouter as any).stack.find(
+        (l: any) => l.route && l.route.path === '/' && l.route.methods.get
+      );
+      assert(connGetLayer !== undefined, 'Ruta GET / en connectionRouter debe existir');
+
+      let connJson: any = null;
+      const mockReq: any = { user: { userId: 'usr-test-euler' } };
+      const mockRes: any = { json: (d: any) => { connJson = d; } };
+      connGetLayer.route.stack[connGetLayer.route.stack.length - 1].handle(mockReq, mockRes);
+      assert(connJson?.meta?.eulerStreamConfigured === false, 'Con tu_clave_euler_stream_aqui eulerStreamConfigured en /api/connection debe ser false');
+
+      // Ruta /ready y /api/ready: debe responder con eulerStreamConfigured: false
+      const readyLayer = (systemRouter as any).stack.find(
+        (l: any) => l.route && (l.route.path === '/ready' || (Array.isArray(l.route.path) && l.route.path.includes('/ready')))
+      );
+      assert(readyLayer !== undefined, 'Ruta GET /ready en systemRouter debe existir');
+      let readyJson: any = null;
+      readyLayer.route.stack[0].handle({} as any, { json: (d: any) => { readyJson = d; } });
+      assert(readyJson?.eulerStreamConfigured === false, 'Con tu_clave_euler_stream_aqui eulerStreamConfigured en /ready debe ser false');
+
+      // Con clave real válida, debe devolver true
+      process.env.EULER_STREAM_API_KEY = 'real_euler_sign_key_valid_12345';
+      assert(DirectTikTokConnector.getEffectiveEulerKey() === 'real_euler_sign_key_valid_12345', 'Debe aceptar clave real');
+
+      connGetLayer.route.stack[connGetLayer.route.stack.length - 1].handle(mockReq, mockRes);
+      assert(connJson?.meta?.eulerStreamConfigured === true, 'Con clave real eulerStreamConfigured en /api/connection debe ser true');
+
+      readyLayer.route.stack[0].handle({} as any, { json: (d: any) => { readyJson = d; } });
+      assert(readyJson?.eulerStreamConfigured === true, 'Con clave real eulerStreamConfigured en /ready debe ser true');
+
+      // Verificar que ServerHealthCard incluye el indicador de Euler Stream
+      const healthCardCode = fs.readFileSync(
+        path.resolve(process.cwd(), 'src/components/settings/ServerHealthCard.tsx'),
+        'utf-8'
+      );
+      assert(healthCardCode.includes('eulerStreamConfigured'), 'ServerHealthCard debe consultar eulerStreamConfigured');
+      assert(healthCardCode.includes('Euler Stream'), 'ServerHealthCard debe mostrar la casilla de Euler Stream');
+    } finally {
+      process.env.EULER_STREAM_API_KEY = prevEuler;
+    }
+  });
+
+  // 58. Interfaz: franja de aviso amarilla para connection.notice en ConnectionsView y DashboardView
+  await test('58. Interfaz: franja de aviso amarilla para connection.notice en ConnectionsView y DashboardView', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    // 1. En ConnectionsView.tsx
+    const connViewCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/connections/ConnectionsView.tsx'),
+      'utf-8'
+    );
+    assert(connViewCode.includes('connection.notice'), 'ConnectionsView debe verificar connection.notice');
+    assert(connViewCode.includes('bg-amber-950/40') || connViewCode.includes('border-amber-500'), 'ConnectionsView debe usar franja de aviso amarilla');
+
+    // 2. En DashboardView.tsx
+    const dashboardCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/dashboard/DashboardView.tsx'),
+      'utf-8'
+    );
+    assert(dashboardCode.includes('connection.notice'), 'DashboardView debe verificar connection.notice');
+    assert(dashboardCode.includes('bg-amber-950/40') || dashboardCode.includes('border-amber-500'), 'DashboardView debe usar franja de aviso amarilla');
+    assert(dashboardCode.includes('eulerConfigured === false'), 'DashboardView debe mantener el aviso de Euler');
+  });
+
+  // 59. Validación de secretos: isForbiddenPlaceholder limitado a plantillas y prefijos tu_/cambia_esta_ sin rechazar contraseñas con 'aqui'
+  await test('59. Validación de secretos: isForbiddenPlaceholder limitado a plantillas y prefijos sin rechazar contraseñas legítimas', async () => {
+    const { isForbiddenPlaceholder, validateProductionSecrets } = await import('../src/server/config/forbiddenSecrets');
+
+    // 1. Contraseñas legítimas que contengan "aqui" NO deben ser rechazadas
+    assert(isForbiddenPlaceholder('Aqui123456!') === false, 'Aqui123456! no debe ser rechazado como placeholder');
+    assert(isForbiddenPlaceholder('MiPasswordAqui_2026!') === false, 'MiPasswordAqui_2026! no debe ser rechazado');
+    assert(isForbiddenPlaceholder('SuperSecretAqui!') === false, 'SuperSecretAqui! no debe ser rechazado');
+
+    // 2. Valores que coinciden exactamente con la lista de plantillas SÍ deben ser rechazados
+    assert(isForbiddenPlaceholder('cambia_esta_clave_secreta_por_una_aleatoria_muy_segura_en_produccion') === true, 'Plantilla JWT de .env.example debe ser rechazada');
+    assert(isForbiddenPlaceholder('tu_contrasena_administrador_fuerte_aqui_minimo_10_caracteres') === true, 'Plantilla de contraseña admin debe ser rechazada');
+    assert(isForbiddenPlaceholder('tu_clave_euler_stream_aqui') === true, 'Plantilla Euler debe ser rechazada');
+    assert(isForbiddenPlaceholder('secret') === true, 'secret debe ser rechazado');
+    assert(isForbiddenPlaceholder('password') === true, 'password debe ser rechazado');
+
+    // 3. Prefijos de documentación "tu_" y "cambia_esta_" deben ser rechazados
+    assert(isForbiddenPlaceholder('tu_otra_clave_ejemplo') === true, 'Valores que empiezan por tu_ deben ser rechazados');
+    assert(isForbiddenPlaceholder('cambia_esta_clave_nueva') === true, 'Valores que empiezan por cambia_esta_ deben ser rechazados');
+
+    // 4. validateProductionSecrets con contraseña que contiene 'aqui' no debe arrojar error
+    const prevEnv = process.env.NODE_ENV;
+    const prevJwt = process.env.JWT_SECRET;
+    const prevPass = process.env.ADMIN_PASSWORD;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'c0a80101_crypto_random_secret_32_chars_ok!';
+      process.env.ADMIN_PASSWORD = 'Aqui123456!';
+
+      let errorThrown = false;
+      try {
+        validateProductionSecrets();
+      } catch {
+        errorThrown = true;
+      }
+      assert(!errorThrown, 'validateProductionSecrets no debe rechazar la contraseña legítima Aqui123456!');
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+      process.env.JWT_SECRET = prevJwt;
+      process.env.ADMIN_PASSWORD = prevPass;
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
