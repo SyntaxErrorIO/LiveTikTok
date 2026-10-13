@@ -6,9 +6,6 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Install native compilation dependencies for SQLite on Alpine
-RUN apk add --no-cache python3 make g++ sqlite-dev
-
 COPY package*.json ./
 RUN npm ci
 
@@ -22,12 +19,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install native build tools for SQLite compilation in alpine
-RUN apk add --no-cache python3 make g++ sqlite-dev
-
-# Install production dependencies
+# Install production dependencies (better-sqlite3 includes prebuilt linuxmusl binaries)
 COPY package*.json ./
-RUN npm ci --omit=dev && npm install -g tsx && apk del python3 make g++
+RUN npm ci --omit=dev && npm install -g tsx
 
 # Copy built frontend assets and server codebase
 COPY --from=builder /app/dist ./dist

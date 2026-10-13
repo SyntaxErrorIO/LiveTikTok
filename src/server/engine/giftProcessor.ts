@@ -44,13 +44,13 @@ export class GiftProcessor {
           username: donorUser,
           nickname: event.user.nickname || donorUser,
           points: diamonds,
-          giftsCount: event.data.repeatCount || 1,
+          giftsCount: 1,
           lastUpdated: Date.now(),
         };
         leaderboard.push(entry);
       } else {
         entry.points += diamonds;
-        entry.giftsCount += event.data.repeatCount || 1;
+        entry.giftsCount += 1;
         entry.lastUpdated = Date.now();
       }
 

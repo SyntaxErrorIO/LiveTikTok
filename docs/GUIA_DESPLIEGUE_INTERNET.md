@@ -113,6 +113,9 @@ ADMIN_USERNAME=admin
 ADMIN_EMAIL=streamer@tudominio.com
 ADMIN_PASSWORD=Reemplazar_Con_Tu_Contrasena_Robusta_Unica_Minimo_10_Chars
 
+# Control de registro público: 'true' para desarrollo, 'false' para entornos de producción
+ALLOW_REGISTRATION=false
+
 # Clave de validación para webhooks externos (opcional pero recomendada)
 TIKTOK_WEBHOOK_SECRET=token_aleatorio_para_webhooks_externos
 
@@ -122,6 +125,10 @@ DATA_DIR=/app/data
 # Orígenes adicionales permitidos para incrustar en iframe (CSP frame-ancestors)
 ALLOWED_FRAME_ANCESTORS=https://ai.google.dev https://aistudio.google.com
 ```
+
+### Control de Registro de Usuarios (`ALLOW_REGISTRATION`)
+* **Por defecto**: `true` en modo desarrollo y `false` en producción.
+* **Comportamiento**: Cuando `ALLOW_REGISTRATION` es `false`, cualquier intento de registro público vía `POST /api/auth/register` responde con código HTTP `403 Forbidden`, salvo que la petición provenga de un usuario autenticado con rol `admin`.
 
 ### Seguridad de Sesión y Protección CSRF
 * **JWT fuera de `localStorage`**: El token de sesión administrativa no se guarda en el almacenamiento local del navegador, evitando filtraciones por vulnerabilidades XSS. Se gestiona mediante una cookie `HttpOnly`, `SameSite=Strict` y `Secure` en producción.

@@ -21,6 +21,15 @@ export const securityHeaders = (isProd: boolean) => {
       ? `script-src 'self' 'nonce-${nonce}'`
       : "script-src 'self' 'unsafe-inline'";
 
+    // connect-src: limitado estrictamente a 'self' y ws:/wss: para stream/HMR, sin aceptar comodín https:
+    const extraConnectSrc = process.env.ALLOWED_CONNECT_SRC?.trim() || '';
+    const connectDirective = [
+      "'self'",
+      "ws:",
+      "wss:",
+      extraConnectSrc,
+    ].filter(Boolean).join(' ');
+
     const cspPolicy = [
       "default-src 'self'",
       scriptDirective,
@@ -28,7 +37,7 @@ export const securityHeaders = (isProd: boolean) => {
       "font-src 'self' data: https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",
       "media-src 'self' data: blob:",
-      "connect-src 'self' ws: wss: https:",
+      `connect-src ${connectDirective}`,
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

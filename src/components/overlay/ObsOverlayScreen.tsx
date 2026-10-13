@@ -117,6 +117,9 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
           colors: ['#eab308', '#f59e0b', '#38bdf8', '#a855f7', '#ffffff'],
         });
       } catch {}
+    } else if (goalCurrent < goalTarget && goalReachedCelebrated) {
+      // Reinicia goalReachedCelebrated cuando el progreso cae o la meta sube
+      setGoalReachedCelebrated(false);
     }
   }, [goalCurrent, goalTarget, goalReachedCelebrated]);
 
@@ -136,38 +139,8 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       // Launch visual particles
       triggerVisualParticles(payload.effect.animationType, payload.effect.primaryColor, payload.effect.secondaryColor);
 
-      // If gift event with diamond value, increase goal progress
-      if (payload.event?.type === 'gift' && payload.event.data?.diamondCount) {
-        const diamonds = (payload.event.data.diamondCount || 1) * (payload.event.data.repeatCount || 1);
-        setGoalCurrent((curr) => curr + diamonds);
-
-        // Update top donors
-        setTopDonors((prev) => {
-          const donorUser = payload.event.user.username;
-          const existing = prev.find((d) => d.username === donorUser);
-          let updated: LeaderboardEntry[];
-          if (existing) {
-            updated = prev.map((d) =>
-              d.username === donorUser
-                ? { ...d, points: d.points + diamonds, giftsCount: d.giftsCount + 1 }
-                : d
-            );
-          } else {
-            updated = [
-              ...prev,
-              {
-                userId: payload.event.user.id || donorUser,
-                username: donorUser,
-                nickname: payload.event.user.nickname || donorUser,
-                points: diamonds,
-                giftsCount: 1,
-                lastUpdated: Date.now(),
-              },
-            ];
-          }
-          return updated.sort((a, b) => b.points - a.points).slice(0, 5);
-        });
-      }
+      // El servidor es la única fuente de verdad: meta y donadores se actualizan
+      // exclusivamente mediante los eventos SSE (COUNTERS_UPDATED, LEADERBOARD_UPDATED) y GET /api/overlay/state.
 
       // In OBS standalone mode, play sound if requested
       if (!isPreview && payload.effect.soundId) {

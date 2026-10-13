@@ -15,6 +15,23 @@ const authLimiter = RateLimiter.createLimiter({
 
 // User Registration
 router.post('/register', authLimiter, (req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowRegistrationEnv = process.env.ALLOW_REGISTRATION;
+  const allowRegistration =
+    allowRegistrationEnv !== undefined
+      ? allowRegistrationEnv.toLowerCase() === 'true' || allowRegistrationEnv === '1'
+      : !isProd;
+
+  if (!allowRegistration) {
+    const authedReq = req as AuthedRequest;
+    if (authedReq.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'El registro público de usuarios está deshabilitado en este servidor.',
+      });
+    }
+  }
+
   const { username, email, password } = req.body;
   const result = AuthManager.register({ username, email, password });
   if (!result.success) {
@@ -89,7 +106,7 @@ router.post('/overlay-token/regenerate', requireAuth, (req: Request, res: Respon
 router.get('/overlay/verify', (req: Request, res: Response) => {
   const token = typeof req.query.overlayToken === 'string' ? req.query.overlayToken.trim() : undefined;
   if (!token) {
-    return res.json({ valid: true, mode: 'public' });
+    return res.status(400).json({ valid: false, error: 'Parámetro overlayToken requerido.' });
   }
   const user = AuthManager.getUserByOverlayToken(token);
   return res.json({ valid: Boolean(user), username: user?.username || null });

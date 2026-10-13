@@ -1687,6 +1687,234 @@ async function runAllTests() {
     }
   });
 
+  // 44. Detalle 1: Overlay delega meta y ranking exclusivamente al servidor (sin suma local)
+  await test('44. Overlay OBS: Eliminación de suma local de meta y ranking en handleIncomingOverlay', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const overlayCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/overlay/ObsOverlayScreen.tsx'),
+      'utf-8'
+    );
+    assert(!overlayCode.includes('setGoalCurrent((curr) => curr + diamonds)'), 'No debe sumar diamantes localmente en el overlay');
+    assert(!overlayCode.includes('d.points + diamonds, giftsCount: d.giftsCount + 1'), 'No debe mutar topDonors localmente en handleIncomingOverlay');
+    assert(overlayCode.includes('COUNTERS_UPDATED'), 'Debe escuchar COUNTERS_UPDATED del servidor');
+    assert(overlayCode.includes('LEADERBOARD_UPDATED'), 'Debe escuchar LEADERBOARD_UPDATED del servidor');
+    assert(overlayCode.includes('/api/overlay/state'), 'Debe consultar GET /api/overlay/state');
+  });
+
+  // 45. Detalle 2: Reinicio de celebración cuando la meta cae o el objetivo sube
+  await test('45. Overlay OBS: Reinicio de goalReachedCelebrated cuando el objetivo supera el progreso', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const overlayCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/overlay/ObsOverlayScreen.tsx'),
+      'utf-8'
+    );
+    assert(
+      overlayCode.includes('goalCurrent < goalTarget && goalReachedCelebrated'),
+      'Debe comprobar si goalCurrent < goalTarget para reiniciar goalReachedCelebrated'
+    );
+    assert(
+      overlayCode.includes('setGoalReachedCelebrated(false)'),
+      'Debe reiniciar setGoalReachedCelebrated(false) para permitir celebraciones posteriores'
+    );
+  });
+
+  // 46. Detalle 3: giftsCount cuenta envíos de regalos (1 por combo) y points suma diamantes totales
+  await test('46. Motor de Regalos: giftsCount cuenta envíos (1 por combo) y points acumula diamantes totales', async () => {
+    const { GiftProcessor } = await import('../src/server/engine/giftProcessor');
+    const testUserId = 'usr-gift-combo-' + Date.now();
+
+    const comboEvent1: any = {
+      id: 'combo-evt-1-' + Date.now(),
+      type: 'gift',
+      user: { id: 'u-combo-donor', username: 'combo_donor', nickname: 'Combo Donor' },
+      data: {
+        giftName: 'Rosa',
+        diamondCount: 1,
+        repeatCount: 10, // 10 rosas en 1 combo
+      },
+    };
+
+    // 1. Primer envío combo: 10 diamantes, giftsCount = 1
+    GiftProcessor.recordGiftStats(comboEvent1, 10, testUserId);
+    let lb = StateStore.getLeaderboard(testUserId);
+    let donor = lb.find((d) => d.username === 'combo_donor');
+    assert(donor?.points === 10, 'Points debe acumular los diamantes totales del combo (10)');
+    assert(donor?.giftsCount === 1, 'GiftsCount debe ser 1 para el primer combo enviado');
+
+    // 2. Segundo envío combo: 50 diamantes, giftsCount debe incrementar en 1 (total 2)
+    const comboEvent2: any = {
+      id: 'combo-evt-2-' + Date.now(),
+      type: 'gift',
+      user: { id: 'u-combo-donor', username: 'combo_donor', nickname: 'Combo Donor' },
+      data: {
+        giftName: 'Galaxia',
+        diamondCount: 50,
+        repeatCount: 2, // 100 diamantes
+      },
+    };
+    GiftProcessor.recordGiftStats(comboEvent2, 100, testUserId);
+    lb = StateStore.getLeaderboard(testUserId);
+    donor = lb.find((d) => d.username === 'combo_donor');
+    assert(donor?.points === 110, 'Points debe acumular 10 + 100 = 110 diamantes');
+    assert(donor?.giftsCount === 2, 'GiftsCount debe sumar 1 por cada envío de regalo/combo (total 2)');
+  });
+
+  // 47. Detalle 4: CSP connect-src limitado a 'self' y ws/wss sin wildcard https:
+  await test('47. Seguridad CSP: connect-src restringido a self y ws/wss sin wildcard https:', async () => {
+    const { securityHeaders } = await import('../src/server/middleware/securityHeaders');
+
+    const headersSet: Record<string, string> = {};
+    const mockRes: any = {
+      setHeader: (name: string, value: string) => { headersSet[name.toLowerCase()] = value; },
+      removeHeader: () => {},
+    };
+
+    const middleware = securityHeaders(true);
+    middleware({} as any, mockRes, () => {});
+
+    const csp = headersSet['content-security-policy'];
+    const connectPart = csp.split(';').find((p: string) => p.trim().startsWith('connect-src')) || '';
+    assert(connectPart.includes("'self'"), "connect-src debe incluir 'self'");
+    assert(!connectPart.includes('https:'), "connect-src NO debe contener el comodín inseguro 'https:'");
+  });
+
+  // 48. Detalle 5: GET /api/auth/overlay/verify responde 400 sin overlayToken
+  await test('48. Seguridad Overlay: /overlay/verify responde 400 con valid:false si no se envía overlayToken', async () => {
+    const { default: authRouter } = await import('../src/server/routes/auth');
+    const verifyLayer = (authRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/overlay/verify' && l.route.methods.get
+    );
+    assert(verifyLayer !== undefined, 'Ruta GET /overlay/verify debe estar registrada');
+
+    const verifyHandler = verifyLayer.route.stack[0].handle;
+
+    // 1. Sin parámetro overlayToken -> 400 Bad Request
+    let statusSent = 0;
+    let jsonSent: any = null;
+    const mockResNoToken: any = {
+      status: (code: number) => {
+        statusSent = code;
+        return { json: (d: any) => { jsonSent = d; } };
+      },
+      json: (d: any) => { jsonSent = d; },
+    };
+    verifyHandler({ query: {} } as any, mockResNoToken);
+    assert(statusSent === 400, 'Debe responder 400 cuando falta overlayToken');
+    assert(jsonSent?.valid === false, 'Debe devolver valid: false cuando falta token');
+
+    // 2. Con overlayToken válido -> 200 OK con valid: true
+    const testUser = AuthManager.register({
+      username: 'overlay_user_' + Date.now(),
+      email: `overlay_${Date.now()}@test.local`,
+      password: 'Password123!',
+    });
+    const token = testUser.user?.overlayToken;
+    let validJsonSent: any = null;
+    const mockResValid: any = {
+      status: (code: number) => ({ json: (d: any) => { validJsonSent = d; } }),
+      json: (d: any) => { validJsonSent = d; },
+    };
+    verifyHandler({ query: { overlayToken: token } } as any, mockResValid);
+    assert(validJsonSent?.valid === true, 'Debe responder valid: true cuando el token es válido');
+  });
+
+  // 49. Detalle 6: ALLOW_REGISTRATION=false bloquea registro público con 403 salvo para administradores
+  await test('49. Seguridad Registro: ALLOW_REGISTRATION bloquea registro público con 403 excepto para admin', async () => {
+    const { default: authRouter } = await import('../src/server/routes/auth');
+    const registerLayer = (authRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/register' && l.route.methods.post
+    );
+    const registerHandler = registerLayer.route.stack[registerLayer.route.stack.length - 1].handle;
+
+    const prevAllow = process.env.ALLOW_REGISTRATION;
+    try {
+      process.env.ALLOW_REGISTRATION = 'false';
+
+      // 1. Solicitud anónima/pública sin rol admin -> 403 Forbidden
+      let status403 = 0;
+      let json403: any = null;
+      const mockRes403: any = {
+        status: (code: number) => {
+          status403 = code;
+          return { json: (d: any) => { json403 = d; } };
+        },
+      };
+      registerHandler(
+        { body: { username: 'intruder', email: 'intruder@test.local', password: 'Password123!' } } as any,
+        mockRes403
+      );
+      assert(status403 === 403, 'Registro público con ALLOW_REGISTRATION=false debe responder 403');
+      assert(json403?.success === false, 'Debe retornar success: false');
+
+      // 2. Solicitud con usuario administrador autenticado -> Permitido (evalúa registro)
+      let adminStatus = 0;
+      let adminJson: any = null;
+      const mockResAdmin: any = {
+        status: (code: number) => {
+          adminStatus = code;
+          return { json: (d: any) => { adminJson = d; } };
+        },
+        json: (d: any) => { adminJson = d; },
+        cookie: () => {},
+      };
+      registerHandler(
+        {
+          user: { role: 'admin', userId: 'usr-admin' },
+          body: { username: 'new_sub_user_' + Date.now(), email: `sub_${Date.now()}@test.local`, password: 'Password123!' },
+        } as any,
+        mockResAdmin
+      );
+      assert(adminStatus !== 403, 'Administrador debe poder registrar usuarios incluso si ALLOW_REGISTRATION es false');
+    } finally {
+      process.env.ALLOW_REGISTRATION = prevAllow;
+    }
+  });
+
+  // 50. Detalle 7: Repositorios en src/server/db/ todos de menos de 350 líneas y StateStore modularizado
+  await test('50. Arquitectura Modular: stateStore.ts dividido en src/server/db/ con todos los módulos < 350 líneas', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const dbFiles = [
+      'src/server/stateStore.ts',
+      'src/server/db/database.ts',
+      'src/server/db/usersRepo.ts',
+      'src/server/db/rulesRepo.ts',
+      'src/server/db/effectsRepo.ts',
+      'src/server/db/settingsRepo.ts',
+      'src/server/db/countersRepo.ts',
+      'src/server/db/leaderboardRepo.ts',
+      'src/server/db/logsRepo.ts',
+      'src/server/db/backupsRepo.ts',
+    ];
+
+    for (const relPath of dbFiles) {
+      const full = path.resolve(process.cwd(), relPath);
+      assert(fs.existsSync(full), `El archivo ${relPath} debe existir en el sistema`);
+      const lines = fs.readFileSync(full, 'utf-8').split('\n').length;
+      assert(lines < 350, `El archivo ${relPath} tiene ${lines} líneas y debe tener menos de 350 líneas`);
+    }
+
+    // Comprobar que StateStore delega correctamente a los repositorios
+    const counters = StateStore.getCounters();
+    assert(Array.isArray(counters) && counters.length > 0, 'StateStore facade debe retornar contadores');
+  });
+
+  // 51. Detalle 8: Dockerfile sin dependencias de compilación nativa python3/make/g++/sqlite-dev
+  await test('51. Dockerfile Optimizado: Eliminación de python3/make/g++/sqlite-dev aprovechando prebuilts linuxmusl', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const dockerfile = fs.readFileSync(path.resolve(process.cwd(), 'Dockerfile'), 'utf-8');
+
+    assert(!dockerfile.includes('python3'), 'Dockerfile no debe requerir python3');
+    assert(!dockerfile.includes('make'), 'Dockerfile no debe requerir make');
+    assert(!dockerfile.includes('g++'), 'Dockerfile no debe requerir g++');
+    assert(!dockerfile.includes('sqlite-dev'), 'Dockerfile no debe requerir sqlite-dev');
+    assert(dockerfile.includes('VOLUME ["/app/data"]'), 'Dockerfile debe conservar el volumen persistente /app/data');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

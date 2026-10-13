@@ -184,7 +184,7 @@ export class ActionExecutor {
 
     let pointsToAdd = 10;
     if (action.leaderboardPoints === 'event_diamonds') {
-      pointsToAdd = event.data.diamondCount || 10;
+      pointsToAdd = (event.data?.diamondCount || 10) * (event.data?.repeatCount || 1);
     } else if (typeof action.leaderboardPoints === 'number') {
       pointsToAdd = action.leaderboardPoints;
     }
@@ -195,14 +195,14 @@ export class ActionExecutor {
         username: event.user.username,
         nickname: event.user.nickname,
         points: pointsToAdd,
-        giftsCount: event.type === 'gift' ? (event.data.repeatCount || 1) : 0,
+        giftsCount: event.type === 'gift' ? 1 : 0,
         lastUpdated: Date.now(),
       };
       leaderboard.push(entry);
     } else {
       entry.points += pointsToAdd;
       if (event.type === 'gift') {
-        entry.giftsCount += event.data.repeatCount || 1;
+        entry.giftsCount += 1;
       }
       entry.lastUpdated = Date.now();
     }
