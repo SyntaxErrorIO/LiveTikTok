@@ -46,6 +46,32 @@ export class DirectTikTokConnector implements ITikTokConnector {
     return this.transportConnected;
   }
 
+  /**
+   * Determina si la clave Euler está vacía o contiene valores de relleno ("tu_", "aqui").
+   */
+  public static isPlaceholderEulerKey(key?: string | null): boolean {
+    if (!key) return true;
+    const clean = key.trim().toLowerCase();
+    return clean === '' || clean.startsWith('tu_') || clean.includes('aqui');
+  }
+
+  /**
+   * Obtiene la clave efectiva de Euler Stream, ignorando valores vacíos o de ejemplo.
+   */
+  public static getEffectiveEulerKey(): string {
+    const raw = (
+      process.env.EULER_STREAM_API_KEY ||
+      process.env.EULER_STREAM_KEY ||
+      process.env.SIGN_API_KEY ||
+      ''
+    ).trim();
+
+    if (DirectTikTokConnector.isPlaceholderEulerKey(raw)) {
+      return '';
+    }
+    return raw;
+  }
+
   public async connect(config: ConnectionConfig): Promise<boolean> {
     this.config = config;
 
@@ -68,13 +94,8 @@ export class DirectTikTokConnector implements ITikTokConnector {
     this.lastErrorMessage = undefined;
     this.notifyStatus();
 
-    // Securely retrieve Euler Stream signing key from backend environment
-    const eulerApiKey = (
-      process.env.EULER_STREAM_API_KEY ||
-      process.env.EULER_STREAM_KEY ||
-      process.env.SIGN_API_KEY ||
-      ''
-    ).trim();
+    // Securely retrieve Euler Stream signing key from backend environment (ignoring placeholders)
+    const eulerApiKey = DirectTikTokConnector.getEffectiveEulerKey();
 
     try {
       // Dynamically import WebcastPushConnection from tiktok-live-connector/legacy
@@ -377,12 +398,7 @@ export class DirectTikTokConnector implements ITikTokConnector {
   }
 
   public async testLatency(): Promise<number> {
-    const eulerApiKey = (
-      process.env.EULER_STREAM_API_KEY ||
-      process.env.EULER_STREAM_KEY ||
-      process.env.SIGN_API_KEY ||
-      ''
-    ).trim();
+    const eulerApiKey = DirectTikTokConnector.getEffectiveEulerKey();
 
     // Medición de latencia de red real hacia endpoint activo (Euler Stream o TikTok Webcast)
     const targetUrl = eulerApiKey ? 'https://www.eulerstream.com' : 'https://www.tiktok.com';
@@ -418,7 +434,7 @@ export class DirectTikTokConnector implements ITikTokConnector {
 
     if (lower.includes('signature') || lower.includes('sign') || lower.includes('captcha') || lower.includes('rate limit')) {
       if (!hasEulerKey) {
-        return `TikTok requiere firma de autenticación Webcast. Para servidores en la nube, configura EULER_STREAM_API_KEY en las variables de entorno (.env).`;
+        return `TikTok requiere firma de autenticación Webcast. La clave Euler Stream no está configurada (o contiene valor de relleno). Para servidores en la nube, configura EULER_STREAM_API_KEY en las variables de entorno (.env).`;
       }
       return `Error en la firma de Euler Stream: ${rawErr}`;
     }
@@ -432,6 +448,11 @@ export class DirectTikTokConnector implements ITikTokConnector {
 
   private notifyStatus() {
     const reconnState = this.reconnectManager.getState();
+    const hasValidEulerKey = Boolean(DirectTikTokConnector.getEffectiveEulerKey());
+    const eulerNotice = !hasValidEulerKey
+      ? 'Aviso: Clave de Euler Stream no configurada (o valor de relleno). Conexión directa operando sin firma externa de Euler.'
+      : undefined;
+
     const statusPayload: ConnectorStatusEvent = {
       status: this.status,
       mode: 'real_tiktok',
@@ -442,6 +463,7 @@ export class DirectTikTokConnector implements ITikTokConnector {
       viewerCount: this.config?.viewerCount,
       lastActivityAt: Date.now(),
       errorMessage: this.lastErrorMessage,
+      notice: eulerNotice,
       reconnectAttempts: reconnState.attempts,
       liveConfirmed: this.liveConfirmed,
       transportConnected: this.transportConnected,

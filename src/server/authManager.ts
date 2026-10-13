@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { StateStore } from './stateStore';
 import { SystemLogger } from './systemLogger';
+import { isForbiddenPlaceholder } from './config/forbiddenSecrets';
 
 export interface UserAccount {
   id: string;
@@ -36,8 +37,8 @@ function resolveJwtSecret(): string {
   const isProd = process.env.NODE_ENV === 'production';
 
   if (isProd) {
-    if (!envSecret || envSecret.length < 32 || envSecret.includes('livetrigger_sec_prod_key')) {
-      const errMsg = 'FATAL SEGURIDAD: En producción es obligatorio definir la variable JWT_SECRET con al menos 32 caracteres criptográficos seguros.';
+    if (!envSecret || envSecret.length < 32 || isForbiddenPlaceholder(envSecret)) {
+      const errMsg = 'Error de seguridad crítico: En producción es obligatorio definir la variable JWT_SECRET con al menos 32 caracteres criptográficos seguros y no usar valores de ejemplo ni relleno (.env.example).';
       SystemLogger.error('SECURITY', errMsg);
       throw new Error(errMsg);
     }
@@ -45,7 +46,7 @@ function resolveJwtSecret(): string {
   }
 
   // Non-production (dev/test): use provided secret or generate a strong ephemeral random key
-  if (envSecret && envSecret.length >= 16) {
+  if (envSecret && envSecret.length >= 16 && !isForbiddenPlaceholder(envSecret)) {
     return envSecret;
   }
 
@@ -89,6 +90,12 @@ export class AuthManager {
       const adminEmail = process.env.ADMIN_EMAIL?.trim();
       const adminPassword = process.env.ADMIN_PASSWORD?.trim();
       const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
+
+      if (isProd && adminPassword && isForbiddenPlaceholder(adminPassword)) {
+        const errMsg = 'Error de seguridad crítico: En producción ADMIN_PASSWORD no puede usar una contraseña de ejemplo o relleno prohibida (.env.example).';
+        SystemLogger.error('SECURITY', errMsg);
+        throw new Error(errMsg);
+      }
 
       if (adminEmail && adminPassword) {
         if (adminPassword.length < 10) {

@@ -8,6 +8,7 @@ import { StateStore } from './src/server/stateStore';
 import { SystemLogger } from './src/server/systemLogger';
 import { securityHeaders } from './src/server/middleware/securityHeaders';
 import { extractUser, csrfProtection } from './src/server/middleware/auth';
+import { validateProductionSecrets } from './src/server/config/forbiddenSecrets';
 
 // Modular Express Routers
 import authRoutes from './src/server/routes/auth';
@@ -49,6 +50,8 @@ app.use('/', systemRoutes);
 
 // 5. Frontend Serving: Vite middleware in Dev, Static files in Prod
 async function startServer() {
+  validateProductionSecrets();
+
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

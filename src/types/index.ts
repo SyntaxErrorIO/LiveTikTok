@@ -198,6 +198,8 @@ export interface ConnectionConfig {
   likeTotal?: number;
   pingMs?: number;
   errorMessage?: string;
+  notice?: string;
+  warning?: string;
 }
 
 export interface AppSettings {

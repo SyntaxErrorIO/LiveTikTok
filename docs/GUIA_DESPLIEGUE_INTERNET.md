@@ -272,3 +272,18 @@ Para verificar que el sistema sigue operando aunque cierres el navegador:
 - **Respaldos Automáticos**: El servidor crea copias de seguridad en `/app/data/backups/` antes de cada importación o cambio estructural.
 - **Descargar Copia de Seguridad**: Puedes hacer clic en **Exportar JSON** en el panel de Ajustes para descargar una copia local.
 - **Recuperación tras caídas**: En caso de reinicio de la máquina virtual o caída del proceso, Docker o PM2 reinician automáticamente el contenedor (`restart: unless-stopped`), el servidor lee los archivos de `/app/data` y reanuda el conector de TikTok LIVE sin intervención humana.
+
+---
+
+## 10. Instalación en Windows y Gestión de Módulos Nativos
+
+Para ejecutar o desarrollar LiveTrigger AI en entornos locales de Microsoft Windows (PowerShell):
+* **Node.js**: Se requiere Node.js `>= 22` (definido en `engines` de `package.json`).
+* **Omisión de node-gyp con `.npmrc`**: `better-sqlite3` cuenta con binarios precompilados. Para evitar que npm invoque `node-gyp` (lo cual exigiría Python y Visual Studio Build Tools), se incluye `.npmrc` con `ignore-scripts=true`.
+* **Comandos en PowerShell**:
+  ```powershell
+  npm install
+  Copy-Item .env.example .env
+  npm run dev
+  ```
+Para más detalles, consulta [docs/INSTALACION_WINDOWS.md](INSTALACION_WINDOWS.md).

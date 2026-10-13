@@ -11,6 +11,8 @@ export interface ConnectorStatusEvent {
   viewerCount?: number;
   lastActivityAt?: number;
   errorMessage?: string;
+  notice?: string;
+  warning?: string;
   reconnectAttempts?: number;
   bridgeAvailable?: boolean;
   liveConfirmed?: boolean;

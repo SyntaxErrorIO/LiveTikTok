@@ -37,6 +37,8 @@ export class ConnectorManager {
         conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
         conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
         conn.errorMessage = statusEvent.errorMessage;
+        conn.notice = statusEvent.notice;
+        conn.warning = statusEvent.warning;
         if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
         if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
         StateStore.saveConnection(conn, userId);

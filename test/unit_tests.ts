@@ -2037,6 +2037,132 @@ async function runAllTests() {
     assert(settingsCode.includes('UsersAdminCard'), 'SettingsView debe incluir UsersAdminCard');
   });
 
+  // 55. Instalación en Windows: .npmrc (ignore-scripts=true), package.json engines >=22 y documentación PowerShell
+  await test('55. Instalación en Windows: .npmrc con ignore-scripts, engines >=22 y documentación PowerShell', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    // 1. Archivo .npmrc en raíz con ignore-scripts=true
+    const npmrcPath = path.resolve(process.cwd(), '.npmrc');
+    assert(fs.existsSync(npmrcPath), 'El archivo .npmrc debe existir en la raíz');
+    const npmrcContent = fs.readFileSync(npmrcPath, 'utf-8');
+    assert(
+      npmrcContent.includes('ignore-scripts=true') || npmrcContent.includes('ignore-scripts = true'),
+      '.npmrc debe contener ignore-scripts=true'
+    );
+
+    // 2. package.json contiene engines >=22
+    const pkgPath = path.resolve(process.cwd(), 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    assert(pkg.engines && pkg.engines.node && pkg.engines.node.includes('>=22'), 'package.json debe definir engines.node >=22');
+
+    // 3. Documentación en README.md y docs/ con comandos PowerShell
+    const readmePath = path.resolve(process.cwd(), 'README.md');
+    assert(fs.existsSync(readmePath), 'README.md debe existir');
+    const readmeContent = fs.readFileSync(readmePath, 'utf-8');
+    assert(readmeContent.includes('PowerShell'), 'README.md debe documentar PowerShell');
+    assert(readmeContent.includes('better-sqlite3'), 'README.md debe explicar la particularidad de better-sqlite3');
+    assert(readmeContent.includes('ignore-scripts'), 'README.md debe mencionar ignore-scripts');
+
+    const winDocPath = path.resolve(process.cwd(), 'docs/INSTALACION_WINDOWS.md');
+    assert(fs.existsSync(winDocPath), 'docs/INSTALACION_WINDOWS.md debe existir');
+    const winDocContent = fs.readFileSync(winDocPath, 'utf-8');
+    assert(winDocContent.includes('PowerShell') && winDocContent.includes('ignore-scripts'), 'docs/INSTALACION_WINDOWS.md debe detallar PowerShell e ignore-scripts');
+
+    // 4. Dockerfile copia .npmrc*
+    const dockerfilePath = path.resolve(process.cwd(), 'Dockerfile');
+    const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf-8');
+    assert(dockerfileContent.includes('.npmrc'), 'Dockerfile debe copiar .npmrc*');
+  });
+
+  // 56. Valores de relleno en .env.example: filtro en conector Euler, validación centralizada en producción y secretos vacíos
+  await test('56. Valores de relleno en .env.example: filtro en Euler, validación centralizada y rechazo en producción', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { DirectTikTokConnector } = await import('../src/server/connectors/directTikTokConnector');
+    const { isForbiddenPlaceholder, validateProductionSecrets, FORBIDDEN_PLACEHOLDER_SECRETS } = await import('../src/server/config/forbiddenSecrets');
+
+    // 1. Detección de claves Euler de relleno ("tu_", "aqui" o vacías)
+    assert(DirectTikTokConnector.isPlaceholderEulerKey('tu_clave_euler_stream_aqui') === true, 'Debe detectar tu_clave_euler_stream_aqui como relleno');
+    assert(DirectTikTokConnector.isPlaceholderEulerKey('clave_aqui_123') === true, 'Debe detectar valores con aqui como relleno');
+    assert(DirectTikTokConnector.isPlaceholderEulerKey('') === true, 'Debe detectar clave vacía como no configurada');
+    assert(DirectTikTokConnector.isPlaceholderEulerKey('euler_real_live_sign_key_999') === false, 'Debe aceptar una clave válida');
+
+    // Comprobar que getEffectiveEulerKey ignora valores de relleno
+    const prevEuler = process.env.EULER_STREAM_API_KEY;
+    try {
+      process.env.EULER_STREAM_API_KEY = 'tu_clave_euler_stream_aqui';
+      assert(DirectTikTokConnector.getEffectiveEulerKey() === '', 'getEffectiveEulerKey debe devolver cadena vacía ante valores de relleno');
+
+      const connector = new DirectTikTokConnector();
+      let capturedStatus: any = null;
+      connector.onStatusChange((s) => { capturedStatus = s; });
+      (connector as any).notifyStatus();
+      assert(capturedStatus && capturedStatus.notice && capturedStatus.notice.includes('Euler'), 'El estado de conexión debe incluir un aviso claro de que Euler no está configurado');
+    } finally {
+      process.env.EULER_STREAM_API_KEY = prevEuler;
+    }
+
+    // 2. Centralización y rechazo en producción si JWT_SECRET o ADMIN_PASSWORD son valores de relleno
+    assert(Array.isArray(FORBIDDEN_PLACEHOLDER_SECRETS), 'Debe exportar lista centralizada de secretos prohibidos');
+    assert(isForbiddenPlaceholder('cambia_esta_clave_secreta_por_una_aleatoria_muy_segura_en_produccion') === true, 'JWT_SECRET de .env.example debe ser prohibido');
+    assert(isForbiddenPlaceholder('tu_contrasena_administrador_fuerte_aqui_minimo_10_caracteres') === true, 'ADMIN_PASSWORD de .env.example debe ser prohibido');
+
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevJwt = process.env.JWT_SECRET;
+    const prevPass = process.env.ADMIN_PASSWORD;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'cambia_esta_clave_secreta_por_una_aleatoria_muy_segura_en_produccion';
+      process.env.ADMIN_PASSWORD = 'password_real_12345';
+
+      let threwJwt = false;
+      try {
+        validateProductionSecrets();
+      } catch (err: any) {
+        threwJwt = true;
+        assert(err.message.includes('seguridad') || err.message.includes('JWT_SECRET'), 'El mensaje debe explicar en español el rechazo de JWT_SECRET');
+      }
+      assert(threwJwt, 'validateProductionSecrets debe arrojar excepción si JWT_SECRET es valor de relleno');
+
+      process.env.JWT_SECRET = 'c0a80101_crypto_random_secret_32_chars_ok!';
+      process.env.ADMIN_PASSWORD = 'tu_contrasena_administrador_fuerte_aqui_minimo_10_caracteres';
+
+      let threwPass = false;
+      try {
+        validateProductionSecrets();
+      } catch (err: any) {
+        threwPass = true;
+        assert(err.message.includes('ADMIN_PASSWORD') || err.message.includes('seguridad'), 'El mensaje debe explicar en español el rechazo de ADMIN_PASSWORD');
+      }
+      assert(threwPass, 'validateProductionSecrets debe arrojar excepción si ADMIN_PASSWORD es valor de relleno');
+
+      // Con valores seguros válidos no debe arrojar error
+      process.env.ADMIN_PASSWORD = 'MiPasswordSeguraYUnica_2026!';
+      let noError = true;
+      try {
+        validateProductionSecrets();
+      } catch {
+        noError = false;
+      }
+      assert(noError, 'Con credenciales seguras validateProductionSecrets debe pasar sin errores');
+    } finally {
+      process.env.NODE_ENV = prevNodeEnv;
+      process.env.JWT_SECRET = prevJwt;
+      process.env.ADMIN_PASSWORD = prevPass;
+    }
+
+    // 3. .env.example deja vacíos los 4 secretos y contiene comandos de generación
+    const envExamplePath = path.resolve(process.cwd(), '.env.example');
+    const envExample = fs.readFileSync(envExamplePath, 'utf-8');
+    assert(envExample.includes('EULER_STREAM_API_KEY=\n') || envExample.includes('EULER_STREAM_API_KEY=\r\n'), 'EULER_STREAM_API_KEY debe estar vacío en .env.example');
+    assert(envExample.includes('JWT_SECRET=\n') || envExample.includes('JWT_SECRET=\r\n'), 'JWT_SECRET debe estar vacío en .env.example');
+    assert(envExample.includes('ADMIN_PASSWORD=\n') || envExample.includes('ADMIN_PASSWORD=\r\n'), 'ADMIN_PASSWORD debe estar vacío en .env.example');
+    assert(envExample.includes('TIKTOK_WEBHOOK_SECRET=\n') || envExample.includes('TIKTOK_WEBHOOK_SECRET=\r\n'), 'TIKTOK_WEBHOOK_SECRET debe estar vacío en .env.example');
+    assert(envExample.includes('randomBytes'), '.env.example debe incluir instrucciones con randomBytes');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
