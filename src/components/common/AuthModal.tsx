@@ -34,8 +34,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [copiedToken, setCopiedToken] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      apiService.getRegistrationStatus().then((res) => {
+        if (typeof res?.registrationOpen === 'boolean') {
+          setRegistrationOpen(res.registrationOpen);
+          if (!res.registrationOpen) {
+            setIsRegistering(false);
+          }
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -76,7 +90,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           onClose();
         }, 1200);
       } else {
-        setErrorMsg(res.error || 'Error al registrar.');
+        const errorText = res.error?.includes('deshabilitado')
+          ? 'El registro está cerrado. Pide acceso al administrador.'
+          : res.error || 'Error al registrar cuenta.';
+        setErrorMsg(errorText);
       }
     } catch {
       setErrorMsg('Error de red al registrar.');
@@ -207,7 +224,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             </div>
           </div>
-        ) : isRegistering ? (
+        ) : isRegistering && registrationOpen ? (
           /* State B: Registration Form */
           <form onSubmit={handleRegister} className="space-y-4">
             <div>
@@ -336,13 +353,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
 
             <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => setIsRegistering(true)}
-                className="text-xs text-cyan-400 hover:underline"
-              >
-                ¿Nuevo aquí? Crea una cuenta de streamer
-              </button>
+              {registrationOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setIsRegistering(true)}
+                  className="text-xs text-cyan-400 hover:underline"
+                >
+                  ¿Nuevo aquí? Crea una cuenta de streamer
+                </button>
+              ) : (
+                <span className="text-xs text-slate-400">
+                  El registro está cerrado. Pide acceso al administrador.
+                </span>
+              )}
             </div>
           </form>
         )}

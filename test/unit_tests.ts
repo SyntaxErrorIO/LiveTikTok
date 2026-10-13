@@ -1915,6 +1915,128 @@ async function runAllTests() {
     assert(dockerfile.includes('VOLUME ["/app/data"]'), 'Dockerfile debe conservar el volumen persistente /app/data');
   });
 
+  // 52. Resiliencia Frontend: DashboardView y apiService manejan datos no-array sin errores de TypeError .map()
+  await test('52. Resiliencia Frontend: Protección contra TypeError al mapear leaderboard y contadores no definidos', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const dashboardCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/dashboard/DashboardView.tsx'),
+      'utf-8'
+    );
+    assert(dashboardCode.includes('safeLeaderboard'), 'DashboardView debe definir safeLeaderboard');
+    assert(dashboardCode.includes('safeCounters'), 'DashboardView debe definir safeCounters');
+    assert(dashboardCode.includes('safeRules'), 'DashboardView debe definir safeRules');
+    assert(dashboardCode.includes('safeLeaderboard.slice(0, 4).map'), 'DashboardView debe usar safeLeaderboard para .map()');
+
+    const apiServiceCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/services/apiService.ts'),
+      'utf-8'
+    );
+    assert(apiServiceCode.includes('if (!res.ok) return [];'), 'apiService debe retornar [] cuando res.ok es false en llamadas GET');
+
+    const appCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/App.tsx'),
+      'utf-8'
+    );
+    assert(appCode.includes('Array.isArray(msg.payload)'), 'App.tsx debe comprobar Array.isArray antes de setLeaderboard/setCounters');
+  });
+
+  // 53. Recuperación de Admin con base no vacía: promoción sin duplicar y respeto de contraseñas existentes
+  await test('53. Auth: Promoción o creación de cuenta admin en base no vacía preservando contraseñas', async () => {
+    const { AuthManager } = await import('../src/server/authManager');
+    const { UsersRepository } = await import('../src/server/db/usersRepo');
+
+    const streamerEmail = `streamer_${Date.now()}@test.local`;
+    const streamerPass = 'StreamerPass123!';
+
+    // Registrar un usuario streamer común
+    const regResult = AuthManager.register({
+      username: `streamer_${Date.now()}`,
+      email: streamerEmail,
+      password: streamerPass,
+    });
+    assert(Boolean(regResult.success && regResult.user?.role === 'streamer'), 'Debe crearse como streamer');
+
+    // Forzar en DB que todos los usuarios sean streamer (simular base sin ningún admin)
+    const allUsers = UsersRepository.getUsers().map((u) => ({
+      ...u,
+      role: 'streamer' as const,
+    }));
+    UsersRepository.saveAllUsers(allUsers);
+
+    // Configurar variables para promover este usuario existente
+    const prevEmail = process.env.ADMIN_EMAIL;
+    const prevPass = process.env.ADMIN_PASSWORD;
+    try {
+      process.env.ADMIN_EMAIL = streamerEmail;
+      process.env.ADMIN_PASSWORD = 'NuevoAdminPassword123!';
+
+      AuthManager.init();
+
+      // Verificar que fue promovido a admin
+      const promotedUser = AuthManager.getAllUsers().find((u) => u.email === streamerEmail);
+      assert(promotedUser?.role === 'admin', 'El usuario con ADMIN_EMAIL debe ser promovido a admin');
+
+      // Verificar que su contraseña NO cambió (puede seguir iniciando sesión con streamerPass)
+      const loginCheck = AuthManager.login(streamerEmail, streamerPass);
+      assert(loginCheck.success, 'La contraseña del usuario promovido no debe haber cambiado');
+
+      // Si se vuelve a ejecutar con un admin ya existente, no debe alterar nada
+      AuthManager.init();
+      const loginCheckAgain = AuthManager.login(streamerEmail, streamerPass);
+      assert(loginCheckAgain.success, 'La contraseña del admin existente nunca debe ser modificada');
+    } finally {
+      process.env.ADMIN_EMAIL = prevEmail;
+      process.env.ADMIN_PASSWORD = prevPass;
+    }
+  });
+
+  // 54. Registro cerrado en la interfaz: GET /registration-status, mensaje 403 y sección Usuarios para admin
+  await test('54. Registro cerrado: GET /registration-status, interfaz condicional y gestión de usuarios admin', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { default: authRouter } = await import('../src/server/routes/auth');
+
+    // 1. Endpoint GET /api/auth/registration-status sin autenticación
+    const statusLayer = (authRouter as any).stack.find(
+      (l: any) => l.route && l.route.path === '/registration-status' && l.route.methods.get
+    );
+    assert(statusLayer !== undefined, 'Ruta GET /registration-status debe estar registrada');
+
+    let jsonResult: any = null;
+    const mockRes: any = {
+      json: (d: any) => { jsonResult = d; },
+    };
+    statusLayer.route.stack[0].handle({} as any, mockRes);
+    assert(typeof jsonResult?.registrationOpen === 'boolean', 'registration-status debe retornar { registrationOpen: boolean }');
+
+    // 2. Componente AuthModal maneja registrationOpen y oculta registro con mensaje
+    const authModalCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/common/AuthModal.tsx'),
+      'utf-8'
+    );
+    assert(authModalCode.includes('registrationOpen'), 'AuthModal debe manejar el estado registrationOpen');
+    assert(
+      authModalCode.includes('El registro está cerrado. Pide acceso al administrador.'),
+      'AuthModal debe mostrar el mensaje exacto cuando el registro está cerrado'
+    );
+
+    // 3. Componente UsersAdminCard en Ajustes para admin
+    const usersCardCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/settings/UsersAdminCard.tsx'),
+      'utf-8'
+    );
+    assert(usersCardCode.includes('adminRegisterUser'), 'UsersAdminCard debe llamar a adminRegisterUser');
+    assert(usersCardCode.includes("role !== 'admin'"), 'UsersAdminCard debe validar rol admin');
+
+    const settingsCode = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/settings/SettingsView.tsx'),
+      'utf-8'
+    );
+    assert(settingsCode.includes('UsersAdminCard'), 'SettingsView debe incluir UsersAdminCard');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

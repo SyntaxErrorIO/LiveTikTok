@@ -79,9 +79,23 @@ export default function App() {
 
       setEffects(StorageService.getEffects());
 
-      if (fetchedCounters && fetchedCounters.length > 0) setCounters(fetchedCounters);
-      if (fetchedLeaderboard) setLeaderboard(fetchedLeaderboard);
-      if (fetchedLogs) {
+      if (Array.isArray(fetchedCounters) && fetchedCounters.length > 0) {
+        setCounters(fetchedCounters);
+      } else {
+        const localCounters = StorageService.getCounters();
+        if (Array.isArray(localCounters)) setCounters(localCounters);
+      }
+
+      if (Array.isArray(fetchedLeaderboard)) {
+        setLeaderboard(fetchedLeaderboard);
+      } else if (fetchedLeaderboard && Array.isArray((fetchedLeaderboard as any).leaderboard)) {
+        setLeaderboard((fetchedLeaderboard as any).leaderboard);
+      } else {
+        const localLb = StorageService.getLeaderboard();
+        if (Array.isArray(localLb)) setLeaderboard(localLb);
+      }
+
+      if (Array.isArray(fetchedLogs)) {
         const seen = new Set<string>();
         const uniqueLogs = fetchedLogs.filter((item) => {
           if (!item.id || seen.has(item.id)) return false;
@@ -104,11 +118,13 @@ export default function App() {
       if (fetchedConn) setConnection(fetchedConn);
     } catch {
       // Fallback to local storage if API call is offline
-      setRules(StorageService.getRules());
-      setEffects(StorageService.getEffects());
+      setRules(StorageService.getRules() || []);
+      setEffects(StorageService.getEffects() || []);
       setSettings(StorageService.getSettings());
       setConnection(StorageService.getConnection());
-      setHistory(StorageService.getHistory());
+      setHistory(StorageService.getHistory() || []);
+      setCounters(StorageService.getCounters() || []);
+      setLeaderboard(StorageService.getLeaderboard() || []);
     }
   }, []);
 
@@ -132,9 +148,17 @@ export default function App() {
 
     const unsubSSE = apiService.onSSEMessage((msg) => {
       if (msg.type === 'COUNTERS_UPDATED') {
-        setCounters(msg.payload);
+        if (Array.isArray(msg.payload)) {
+          setCounters(msg.payload);
+        } else if (msg.payload && Array.isArray(msg.payload.counters)) {
+          setCounters(msg.payload.counters);
+        }
       } else if (msg.type === 'LEADERBOARD_UPDATED') {
-        setLeaderboard(msg.payload);
+        if (Array.isArray(msg.payload)) {
+          setLeaderboard(msg.payload);
+        } else if (msg.payload && Array.isArray(msg.payload.leaderboard)) {
+          setLeaderboard(msg.payload.leaderboard);
+        }
       } else if (msg.type === 'CONNECTION_STATUS') {
         setConnection(msg.payload);
       } else if (msg.type === 'FAIL_SAFE_STATE') {
@@ -387,6 +411,7 @@ export default function App() {
             settings={settings}
             onUpdateSettings={setSettings}
             onRefreshAllData={refreshAllData}
+            currentUser={currentUser}
           />
         )}
       </main>

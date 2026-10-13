@@ -9,21 +9,26 @@ import { AutomationSettingsCard } from './AutomationSettingsCard';
 import { ServerHealthCard } from './ServerHealthCard';
 import { BackupRestoreCard } from './BackupRestoreCard';
 import { AuditLogsModal } from './AuditLogsModal';
+import { UsersAdminCard } from './UsersAdminCard';
+import { UserProfile } from '../../services/apiService';
 
 interface SettingsViewProps {
   settings: AppSettings;
   onUpdateSettings: (settings: AppSettings) => void;
   onRefreshAllData: () => void;
+  currentUser?: UserProfile | null;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onUpdateSettings,
   onRefreshAllData,
+  currentUser,
 }) => {
   const [formData, setFormData] = useState<AppSettings>({ ...settings });
   const [notice, setNotice] = useState<string | null>(null);
   const [obsTestResult, setObsTestResult] = useState<string | null>(null);
+  const [activeUser, setActiveUser] = useState<UserProfile | null>(currentUser || null);
 
   // Cloud & Server Health State
   const [health, setHealth] = useState<SystemHealthReport | null>(null);
@@ -51,7 +56,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (h) setHealth(h);
       if (fsStatus) setFailSafe(fsStatus);
       if (snapList) setSnapshots(snapList);
-      if (me?.overlayToken) setOverlayToken(me.overlayToken);
+      if (me) {
+        setActiveUser(me);
+        if (me.overlayToken) setOverlayToken(me.overlayToken);
+      }
     } catch {}
     setIsLoadingHealth(false);
   };
@@ -232,6 +240,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           onImportJson={handleImportJson}
           onResetDefaults={handleResetDefaults}
         />
+
+        <UsersAdminCard currentUser={currentUser ?? activeUser} />
       </div>
 
       {/* System Audit Logs Modal */}

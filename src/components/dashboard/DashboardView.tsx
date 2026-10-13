@@ -75,18 +75,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }, [connection]);
 
-  const activeRules = rules.filter((r) => r.enabled);
-  const totalExecutions = history.filter((h) => h.overallStatus === 'executed').length;
-  const cooldownBlocked = history.filter((h) => h.overallStatus === 'cooldown').length;
-  const errorLogs = history.filter((h) => h.overallStatus === 'error' || h.errorDetails);
+  const safeRules: AutomationRule[] = Array.isArray(rules)
+    ? rules
+    : rules && Array.isArray((rules as any).rules)
+    ? (rules as any).rules
+    : [];
+  const safeHistory: ExecutionLog[] = Array.isArray(history)
+    ? history
+    : history && Array.isArray((history as any).logs)
+    ? (history as any).logs
+    : [];
+  const safeCounters: StreamCounter[] = Array.isArray(counters)
+    ? counters
+    : counters && Array.isArray((counters as any).counters)
+    ? (counters as any).counters
+    : [];
+  const safeLeaderboard: LeaderboardEntry[] = Array.isArray(leaderboard)
+    ? leaderboard
+    : leaderboard && Array.isArray((leaderboard as any).leaderboard)
+    ? (leaderboard as any).leaderboard
+    : [];
+
+  const activeRules = safeRules.filter((r) => r.enabled);
+  const totalExecutions = safeHistory.filter((h) => h.overallStatus === 'executed').length;
+  const cooldownBlocked = safeHistory.filter((h) => h.overallStatus === 'cooldown').length;
+  const errorLogs = safeHistory.filter((h) => h.overallStatus === 'error' || h.errorDetails);
 
   // Categorize received events from history
-  const giftCount = history.filter((h) => h.eventType === 'gift').length;
-  const commentCount = history.filter((h) => h.eventType === 'comment').length;
-  const likeCount = history.filter((h) => h.eventType === 'like').length;
-  const followCount = history.filter((h) => h.eventType === 'follow').length;
+  const giftCount = safeHistory.filter((h) => h.eventType === 'gift').length;
+  const commentCount = safeHistory.filter((h) => h.eventType === 'comment').length;
+  const likeCount = safeHistory.filter((h) => h.eventType === 'like').length;
+  const followCount = safeHistory.filter((h) => h.eventType === 'follow').length;
 
-  const recentHistory = history.slice(0, 6);
+  const recentHistory = safeHistory.slice(0, 6);
 
   const handleRunTests = async () => {
     setIsRunningTests(true);
@@ -231,7 +252,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-cyan-400" />
               <span className="text-xs font-bold text-white">
-                Resultado de Pruebas del Motor ({testResults.passed}/{testResults.total} Pasadas)
+                Resultado de Pruebas del Motor ({testResults.passed ?? 0}/{testResults.total ?? 0} Pasadas)
               </span>
             </div>
             <button
@@ -241,8 +262,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Cerrar
             </button>
           </div>
+          {testResults.error && (
+            <p className="text-xs text-amber-300 bg-amber-950/40 p-2 rounded border border-amber-800/50">
+              {testResults.error}
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-xs">
-            {testResults.results.map((r, i) => (
+            {Array.isArray(testResults.results) && testResults.results.map((r, i) => (
               <div key={i} className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex items-start gap-2">
                 {r.status === 'passed' ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
@@ -265,7 +291,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <span className="text-xs text-slate-400 font-medium">Eventos Procesados</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-bold font-mono text-white tabular-nums">
-              {history.length}
+              {safeHistory.length}
             </span>
             <span className="text-xs text-cyan-400 font-mono">sesión</span>
           </div>
@@ -335,7 +361,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="space-y-3.5">
-            {counters.map((c) => {
+            {safeCounters.map((c) => {
               const pct = Math.min(100, Math.round((c.current / c.target) * 100));
               return (
                 <div key={c.id} className="p-3 rounded-lg bg-slate-900/60 border border-slate-800 space-y-2">
@@ -376,12 +402,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="space-y-2">
-            {leaderboard.length === 0 ? (
+            {safeLeaderboard.length === 0 ? (
               <div className="py-8 text-center text-xs text-slate-500">
                 Aún no hay puntos registrados en la sesión.
               </div>
             ) : (
-              leaderboard.slice(0, 4).map((entry, idx) => (
+              safeLeaderboard.slice(0, 4).map((entry, idx) => (
                 <div
                   key={`${entry.userId || 'user'}-${idx}`}
                   className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs"
@@ -530,7 +556,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="mt-4 divide-y divide-slate-800/60">
-              {rules.slice(0, 4).map((rule) => (
+              {safeRules.slice(0, 4).map((rule) => (
                 <div
                   key={rule.id}
                   className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0"

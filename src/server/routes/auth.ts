@@ -13,6 +13,36 @@ const authLimiter = RateLimiter.createLimiter({
   category: 'AUTH',
 });
 
+// Check whether public registration is open (unauthenticated)
+router.get('/registration-status', (_req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowRegistrationEnv = process.env.ALLOW_REGISTRATION;
+  const allowRegistration =
+    allowRegistrationEnv !== undefined
+      ? allowRegistrationEnv.toLowerCase() === 'true' || allowRegistrationEnv === '1'
+      : !isProd;
+
+  return res.json({ registrationOpen: allowRegistration });
+});
+
+// Admin: List all user accounts
+router.get('/users', requireAuth, (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  if (authedReq.user?.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Acceso denegado. Se requiere rol de administrador.' });
+  }
+
+  const allUsers = AuthManager.getAllUsers().map((u) => ({
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    role: u.role,
+    createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt,
+  }));
+  return res.json({ success: true, users: allUsers });
+});
+
 // User Registration
 router.post('/register', authLimiter, (req: Request, res: Response) => {
   const isProd = process.env.NODE_ENV === 'production';
@@ -22,14 +52,14 @@ router.post('/register', authLimiter, (req: Request, res: Response) => {
       ? allowRegistrationEnv.toLowerCase() === 'true' || allowRegistrationEnv === '1'
       : !isProd;
 
-  if (!allowRegistration) {
-    const authedReq = req as AuthedRequest;
-    if (authedReq.user?.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'El registro público de usuarios está deshabilitado en este servidor.',
-      });
-    }
+  const authedReq = req as AuthedRequest;
+  const isAdmin = authedReq.user?.role === 'admin';
+
+  if (!allowRegistration && !isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'El registro público de usuarios está deshabilitado en este servidor. Pide acceso al administrador.',
+    });
   }
 
   const { username, email, password } = req.body;
@@ -38,7 +68,7 @@ router.post('/register', authLimiter, (req: Request, res: Response) => {
     return res.status(400).json(result);
   }
 
-  if (result.token) {
+  if (result.token && !isAdmin) {
     res.cookie('livetrigger_session', result.token, {
       httpOnly: true,
       sameSite: 'strict',

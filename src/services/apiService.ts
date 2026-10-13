@@ -15,6 +15,7 @@ export interface TestSuiteResult {
   total: number;
   passed: number;
   results: { test: string; status: 'passed' | 'failed'; details: string }[];
+  error?: string;
 }
 
 export interface UserProfile {
@@ -233,8 +234,11 @@ class ApiService {
   public async getRules(): Promise<AutomationRule[]> {
     try {
       const res = await this.fetchWithAuth('/api/rules');
+      if (!res.ok) return [];
       const data = await res.json();
-      return data.rules || [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.rules)) return data.rules;
+      return [];
     } catch {
       return [];
     }
@@ -350,8 +354,11 @@ class ApiService {
   public async getCounters(): Promise<StreamCounter[]> {
     try {
       const res = await this.fetchWithAuth('/api/counters');
+      if (!res.ok) return [];
       const data = await res.json();
-      return data.counters || [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.counters)) return data.counters;
+      return [];
     } catch {
       return [];
     }
@@ -371,8 +378,11 @@ class ApiService {
   public async getLeaderboard(): Promise<LeaderboardEntry[]> {
     try {
       const res = await this.fetchWithAuth('/api/leaderboard');
+      if (!res.ok) return [];
       const data = await res.json();
-      return data.leaderboard || [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.leaderboard)) return data.leaderboard;
+      return [];
     } catch {
       return [];
     }
@@ -392,8 +402,11 @@ class ApiService {
   public async getLogs(): Promise<ExecutionLog[]> {
     try {
       const res = await this.fetchWithAuth('/api/logs');
+      if (!res.ok) return [];
       const data = await res.json();
-      return data.logs || [];
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.logs)) return data.logs;
+      return [];
     } catch {
       return [];
     }
@@ -476,13 +489,28 @@ class ApiService {
   public async runAutomatedTests(): Promise<TestSuiteResult> {
     try {
       const res = await this.fetchWithAuth('/api/tests/run', { method: 'POST' });
-      return await res.json();
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data?.results)) {
+        return {
+          success: false,
+          total: 1,
+          passed: 0,
+          error: data?.error || (res.status === 403 ? 'Pruebas deshabilitadas en producción o rol de administrador requerido.' : `Error del servidor (${res.status})`),
+          results: [{
+            test: 'Ejecución de pruebas del servidor',
+            status: 'failed',
+            details: data?.error || `Error HTTP ${res.status}: Requiere rol de administrador`,
+          }],
+        };
+      }
+      return data;
     } catch (err: any) {
       return {
         success: false,
         total: 1,
         passed: 0,
-        results: [{ test: 'Ejecución de pruebas del servidor', status: 'failed', details: err.message }],
+        error: err?.message || 'Error de conexión',
+        results: [{ test: 'Ejecución de pruebas del servidor', status: 'failed', details: err?.message || 'Error desconocido' }],
       };
     }
   }
@@ -518,6 +546,41 @@ class ApiService {
   // -------------------------------------------------------------
   // USER AUTHENTICATION & MULTI-ACCOUNT METHODS
   // -------------------------------------------------------------
+  public async getRegistrationStatus(): Promise<{ registrationOpen: boolean }> {
+    try {
+      const res = await fetch('/api/auth/registration-status');
+      if (!res.ok) return { registrationOpen: false };
+      return await res.json();
+    } catch {
+      return { registrationOpen: false };
+    }
+  }
+
+  public async getUsers(): Promise<UserProfile[]> {
+    try {
+      const res = await this.fetchWithAuth('/api/auth/users');
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data?.users) ? data.users : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public async adminRegisterUser(payload: { username: string; email: string; password: string }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    try {
+      const res = await this.fetchWithAuth('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Error al crear usuario.' };
+    }
+  }
+
   public async register(payload: { username: string; email: string; password: string }): Promise<{ success: boolean; user?: UserProfile; token?: string; error?: string }> {
     try {
       const res = await fetch('/api/auth/register', {

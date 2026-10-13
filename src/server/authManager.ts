@@ -143,7 +143,65 @@ export class AuthManager {
       } else {
         SystemLogger.warn('AUTH', 'Sin cuenta de administrador inicial. Defina ADMIN_EMAIL y ADMIN_PASSWORD en variables de entorno.');
       }
+    } else {
+      // Base no vacía: Si hay usuarios pero no hay ningún admin y existen ADMIN_EMAIL y ADMIN_PASSWORD:
+      const hasAdmin = this.users.some((u) => u.role === 'admin');
+      const adminEmail = process.env.ADMIN_EMAIL?.trim();
+      const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+      const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
+
+      if (!hasAdmin && adminEmail && adminPassword) {
+        const existingUser = this.users.find(
+          (u) => u.email.toLowerCase() === adminEmail.toLowerCase()
+        );
+
+        if (existingUser) {
+          // Si ya existe un usuario con ese email, promuévelo en lugar de duplicarlo
+          // NUNCA cambies la contraseña de un usuario existente
+          existingUser.role = 'admin';
+          this.saveUsers();
+          SystemLogger.info(
+            'AUTH',
+            `Usuario existente con correo ${adminEmail} promovido a rol administrador al no haber administradores en la base de datos`,
+            {
+              userId: existingUser.id,
+              details: { email: existingUser.email, username: existingUser.username },
+            }
+          );
+        } else {
+          // Si no existe, crear la cuenta admin
+          if (adminPassword.length < 10) {
+            SystemLogger.warn('AUTH', 'ADMIN_PASSWORD demasiado corta. Debe tener al menos 10 caracteres.');
+          } else {
+            const salt = crypto.randomBytes(16).toString('hex');
+            const hash = this.hashPassword(adminPassword, salt);
+            const adminUser: UserAccount = {
+              id: 'usr-admin-' + Date.now().toString(36),
+              username: adminUsername,
+              email: adminEmail.toLowerCase(),
+              role: 'admin',
+              passwordHash: hash,
+              passwordSalt: salt,
+              overlayToken: crypto.randomBytes(24).toString('hex'),
+              createdAt: Date.now(),
+              lastLoginAt: Date.now(),
+            };
+
+            this.users.push(adminUser);
+            this.saveUsers();
+
+            SystemLogger.info('AUTH', 'Nueva cuenta de administrador creada al no haber administradores en la base de datos', {
+              userId: adminUser.id,
+              details: { email: adminUser.email },
+            });
+          }
+        }
+      }
     }
+  }
+
+  public static getAllUsers(): UserAccount[] {
+    return [...this.users];
   }
 
   private static hashPassword(password: string, salt: string): string {
