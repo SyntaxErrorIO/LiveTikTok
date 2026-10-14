@@ -56,6 +56,9 @@ npm install
 # Si deseas forzar explícitamente el flag:
 npm install --ignore-scripts
 
+# Si en algún momento requieres reconstruir manualmente los módulos nativos:
+npm run setup:win
+
 # 4. Crear el archivo de entorno .env a partir de .env.example
 Copy-Item .env.example .env
 

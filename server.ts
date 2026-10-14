@@ -50,56 +50,78 @@ app.use('/', systemRoutes);
 
 // 5. Frontend Serving: Vite middleware in Dev, Static files in Prod
 async function startServer() {
-  validateProductionSecrets();
+  try {
+    validateProductionSecrets();
 
-  if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
-    });
-  }
-
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    SystemLogger.info(
-      'ENGINE',
-      `LiveTrigger AI iniciado en puerto ${PORT} (${isProd ? 'PRODUCCIÓN' : 'DESARROLLO'})`
-    );
-
-    // Auto-Recovery on server boot: If previously connected, resume background monitoring
-    const conn = StateStore.getConnection();
-    if (conn.status === 'connected') {
-      SystemLogger.info('ENGINE', 'Recuperación automática tras reinicio: reconectando proveedor...', {
-        details: { mode: conn.mode, channel: conn.username },
+    if (!isProd) {
+      try {
+        const { createServer: createViteServer } = await import('vite');
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: 'spa',
+        });
+        app.use(vite.middlewares);
+      } catch (viteErr: any) {
+        SystemLogger.error('ENGINE', `Error al inicializar Vite middleware: ${viteErr?.message || viteErr}`);
+        throw viteErr;
+      }
+    } else {
+      const distPath = path.resolve(__dirname, 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (_req: Request, res: Response) => {
+        res.sendFile(path.resolve(distPath, 'index.html'));
       });
-      coreEngine.connect().catch(() => {});
     }
-  });
 
-  // Graceful shutdown handling for container and process managers (Docker, PM2, Kubernetes)
-  const shutdown = (signal: string) => {
-    SystemLogger.info('ENGINE', `Señal de terminación ${signal} recibida. Vaciando colas y cerrando socket...`);
-    coreEngine.disconnect();
-    server.close(() => {
-      SystemLogger.info('ENGINE', 'Servidor HTTP detenido correctamente.');
-      process.exit(0);
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      const localUrl = `http://localhost:${PORT}`;
+      console.log(`\n======================================================`);
+      console.log(`  🚀 LiveTrigger AI Server listening at ${localUrl}`);
+      console.log(`  Entorno: ${isProd ? 'PRODUCCIÓN' : 'DESARROLLO'} | Puerto: ${PORT}`);
+      console.log(`======================================================\n`);
+
+      SystemLogger.info(
+        'ENGINE',
+        `LiveTrigger AI iniciado en ${localUrl} (${isProd ? 'PRODUCCIÓN' : 'DESARROLLO'})`
+      );
+
+      // Auto-Recovery on server boot: If previously connected, resume background monitoring
+      const conn = StateStore.getConnection();
+      if (conn.status === 'connected') {
+        SystemLogger.info('ENGINE', 'Recuperación automática tras reinicio: reconectando proveedor...', {
+          details: { mode: conn.mode, channel: conn.username },
+        });
+        coreEngine.connect().catch(() => {});
+      }
     });
 
-    setTimeout(() => {
-      SystemLogger.error('ENGINE', 'Forzando salida tras exceder tiempo de apagado elegante.');
-      process.exit(1);
-    }, 10000);
-  };
+    server.on('error', (err: any) => {
+      SystemLogger.error('ENGINE', `Error en servidor HTTP: ${err?.message || err}`);
+      console.error(`[FATAL] Error en el servidor HTTP:`, err);
+    });
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+    // Graceful shutdown handling for container and process managers (Docker, PM2, Kubernetes)
+    const shutdown = (signal: string) => {
+      SystemLogger.info('ENGINE', `Señal de terminación ${signal} recibida. Vaciando colas y cerrando socket...`);
+      coreEngine.disconnect();
+      server.close(() => {
+        SystemLogger.info('ENGINE', 'Servidor HTTP detenido correctamente.');
+        process.exit(0);
+      });
+
+      setTimeout(() => {
+        SystemLogger.error('ENGINE', 'Forzando salida tras exceder tiempo de apagado elegante.');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  } catch (err: any) {
+    SystemLogger.error('ENGINE', `Fallo crítico al arrancar LiveTrigger AI: ${err?.message || err}`);
+    console.error(`[FATAL] Fallo al iniciar el servidor:`, err);
+    process.exit(1);
+  }
 }
 
 startServer();

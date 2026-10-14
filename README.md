@@ -42,6 +42,9 @@ npm install
 # Si ejecutas en un entorno sin .npmrc, puedes forzar la bandera:
 npm install --ignore-scripts
 
+# Para reconstruir binarios nativos en Windows si fuera necesario:
+npm run setup:win
+
 # 3. Crear el archivo de variables de entorno a partir de la plantilla
 Copy-Item .env.example .env
 
