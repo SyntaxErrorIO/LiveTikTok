@@ -53,31 +53,20 @@ export class ConnectorManager {
     }
     connectingSet.add(currentGen);
 
+    const conn = StateStore.getConnection(userId);
+    conn.desiredConnected = true;
+    conn.status = 'connecting';
+    StateStore.saveConnection(conn, userId);
+
+    // Create a dedicated connector instance for this specific attempt (isolation per attempt)
+    const connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
+    const unsubs: (() => void)[] = [];
+
     try {
-      const conn = StateStore.getConnection(userId);
-      conn.desiredConnected = true;
-      conn.status = 'connecting';
-      StateStore.saveConnection(conn, userId);
-
-      // Always obtain a clean connector instance matching current mode & connectorType
-      const existing = this.activeConnectors.get(targetUserId);
-      if (existing && (existing.mode !== conn.mode || (conn.connectorType && existing.connectorType !== conn.connectorType))) {
-        try { existing.disconnect(); } catch {}
-        this.activeConnectors.delete(targetUserId);
-      }
-
-      let connector = this.activeConnectors.get(targetUserId);
-      if (!connector) {
-        connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
-        this.activeConnectors.set(targetUserId, connector);
-      }
-
-      const unsubs: (() => void)[] = [];
-
       // Listen to raw events from connector
       const unsubEvent = connector.onEvent((rawEvent) => {
         if (this.connectionGenerations.get(targetUserId) !== currentGen) return;
-        onRawEvent(rawEvent, connector?.mode || 'simulation');
+        onRawEvent(rawEvent, connector.mode);
       });
       unsubs.push(unsubEvent);
 
@@ -134,18 +123,20 @@ export class ConnectorManager {
 
       // Check if generation changed during async await (e.g., user clicked disconnect or started new connect)
       if (this.connectionGenerations.get(targetUserId) !== currentGen) {
-        // Obsolete connection attempt finished after user disconnected or superseded: clean up ONLY this generation's unsubs
+        // Obsolete connection attempt: disconnect ONLY this attempt's connector instance and clean up its listeners
+        try { connector.disconnect(); } catch {}
         this.cleanupAttemptListeners(targetUserId, currentGen);
-        try {
-          if (this.activeConnectors.get(targetUserId) === connector && this.connectionGenerations.get(targetUserId) !== currentGen) {
-            connector.disconnect();
-            this.activeConnectors.delete(targetUserId);
-          }
-        } catch {}
         return false;
       }
 
       if (success) {
+        // Replace previous active connector cleanly
+        const existing = this.activeConnectors.get(targetUserId);
+        if (existing && existing !== connector) {
+          try { existing.disconnect(); } catch {}
+        }
+        this.activeConnectors.set(targetUserId, connector);
+
         FailSafeManager.reset('Conexión establecida exitosamente', userId);
         broadcast(
           {
@@ -156,6 +147,7 @@ export class ConnectorManager {
           userId
         );
       } else {
+        try { connector.disconnect(); } catch {}
         FailSafeManager.activate('No fue posible negociar la conexión con el proveedor.', 'tiktok_disconnect', true, userId);
         broadcast(
           {
@@ -167,6 +159,10 @@ export class ConnectorManager {
         );
       }
       return success;
+    } catch (outerErr: any) {
+      try { connector.disconnect(); } catch {}
+      this.cleanupAttemptListeners(targetUserId, currentGen);
+      return false;
     } finally {
       const set = this.connectingGenerations.get(targetUserId);
       if (set) {
@@ -219,7 +215,7 @@ export class ConnectorManager {
     conn.status = 'disconnected';
     conn.errorMessage = reason;
     conn.lastActivityAt = Date.now();
-    // Preserve desiredConnected because provider disconnect is network failure, not manual user disconnect
+    // Preserve desiredConnected because provider disconnect is network drop, not manual user disconnect
     StateStore.saveConnection(conn, userId);
 
     FailSafeManager.activate(reason, 'tiktok_disconnect', true, userId);

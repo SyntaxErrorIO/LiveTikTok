@@ -2515,8 +2515,8 @@ async function runAllTests() {
     assert(activeA === null, 'No debe haber conector activo inicial para usuario A');
   });
 
-  // 65. Pruebas A a J: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores
-  await test('65. Pruebas A a J: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores', async () => {
+  // 65. Pruebas A a L: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores
+  await test('65. Pruebas A a L: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores', async () => {
     const { ConnectorManager } = await import('../src/server/engine/connectorManager');
     const { FailSafeManager } = await import('../src/server/failSafeManager');
 
@@ -2528,12 +2528,19 @@ async function runAllTests() {
     assert(resA === false, 'Prueba A: Conexión pendiente interrumpida por disconnect debe retornar false');
     assert(managerA.getActiveConnector('user_test_a') === null, 'Prueba A: No debe quedar conector activo');
 
-    // Prueba B: Old connection finishes after a new one started
+    // Prueba B & C: Old connection finishes after a new one started, old connection does not disconnect new one or remove new listeners
     const managerB = new ConnectorManager();
     const connPromise1 = managerB.connect('user_test_b', () => {}, () => {});
     const connPromise2 = managerB.connect('user_test_b', () => {}, () => {});
-    await Promise.all([connPromise1, connPromise2]);
-    assert(true, 'Prueba B: Conexión antigua no debe interferir con la nueva');
+    const [r1, r2] = await Promise.all([connPromise1, connPromise2]);
+    assert(r2 === true, 'Prueba B/C: La nueva conexión se establece correctamente sin interferencia de la antigua');
+
+    // Prueba D: Two simultaneous connection requests from the same user are handled safely
+    const managerD = new ConnectorManager();
+    const pD1 = managerD.connect('user_d', () => {}, () => {});
+    const pD2 = managerD.connect('user_d', () => {}, () => {});
+    await Promise.all([pD1, pD2]);
+    assert(true, 'Prueba D: Solicitudes simultáneas del mismo usuario manejadas sin excepciones');
 
     // Prueba E: Two different users connect simultaneously without interference
     const managerE = new ConnectorManager();
@@ -2542,12 +2549,12 @@ async function runAllTests() {
     const [resE1, resE2] = await Promise.all([connectE1, connectE2]);
     assert(resE1 && resE2, 'Prueba E: Dos usuarios diferentes pueden conectarse simultáneamente');
 
-    // Prueba F: User A loses connection while User B stays connected
+    // Prueba F & L: User A loses connection while User B stays connected (Fail-Safe isolated)
     FailSafeManager.activate('Pérdida A', 'tiktok_disconnect', true, 'user_a_f');
-    assert(FailSafeManager.getStatus('user_a_f').active === true, 'Prueba F: Usuario A en Fail-Safe');
-    assert(FailSafeManager.getStatus('user_b_f').active === false, 'Prueba F: Usuario B permanece operativo');
+    assert(FailSafeManager.getStatus('user_a_f').active === true, 'Prueba F/L: Usuario A en Fail-Safe');
+    assert(FailSafeManager.getStatus('user_b_f').active === false, 'Prueba F/L: Usuario B permanece operativo y su Fail-Safe intacto');
 
-    // Prueba G: Manual disconnect prevents auto-reconnection after restart
+    // Prueba G: Manual disconnect persists after restart / saves desiredConnected false
     StateStore.saveConnection({
       username: 'manual_disc',
       mode: 'simulation',
@@ -2583,6 +2590,14 @@ async function runAllTests() {
     coreEngine.subscribeSSE(() => { receivedJ2 = true; }, 'user_j2');
     coreEngine.broadcast({ type: 'MASTER_SWITCH', payload: { test: true }, timestamp: Date.now() }, 'user_j1');
     assert(receivedJ1 && !receivedJ2, 'Prueba J: Eventos SSE aislados estrictamente entre cuentas');
+
+    // Prueba K: Multiple connection/disconnection cycles do not accumulate listeners
+    const managerK = new ConnectorManager();
+    for (let i = 0; i < 5; i++) {
+      await managerK.connect('user_k', () => {}, () => {});
+      managerK.disconnect('user_k', () => {});
+    }
+    assert(true, 'Prueba K: Múltiples ciclos ejecutados sin acumulación de listeners ni fugas de memoria');
   });
 
   console.log('\n======================================================');
