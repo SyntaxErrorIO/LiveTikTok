@@ -206,6 +206,16 @@ class ApiService {
         type: 'TIKTOK_EVENT_RECEIVED',
         payload: data.payload,
       });
+    } else if (data.type === 'GAME_CONFIG_UPDATED') {
+      eventBus.broadcast({
+        type: 'GAME_CONFIG_UPDATED',
+        payload: data.config,
+      });
+    } else if (data.type === 'GAME_ACTION') {
+      eventBus.broadcast({
+        type: 'GAME_ACTION_RECEIVED',
+        payload: data.payload,
+      });
     }
 
     this.sseListeners.forEach((cb) => cb(data));
@@ -222,6 +232,46 @@ class ApiService {
       return await res.json();
     } catch {
       return null;
+    }
+  }
+
+  public async getGameConfig(overlayToken?: string): Promise<any> {
+    try {
+      const url = overlayToken
+        ? `/api/games/config?overlayToken=${encodeURIComponent(overlayToken)}`
+        : '/api/games/config';
+      const res = await this.fetchWithAuth(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.config || null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async saveGameConfig(config: any): Promise<boolean> {
+    try {
+      const res = await this.fetchWithAuth('/api/games/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async sendGameAction(action: string, payload?: any): Promise<boolean> {
+    try {
+      const res = await this.fetchWithAuth('/api/games/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

@@ -1,19 +1,23 @@
 import React, { useState } from 'react';
-import { LIVE_MENU_ITEMS } from '../GameRegistry';
+import { LIVE_MENU_ITEMS, getMenuItemsByTheme } from '../GameRegistry';
+import { MenuThemeId, LiveMenuItem } from '../types';
 import { Sparkles, Utensils, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 
 interface FoodMenuBoardProps {
   initialExpanded?: boolean;
   isVertical?: boolean;
-  onItemClick?: (menuItem: (typeof LIVE_MENU_ITEMS)[0]) => void;
+  themeId?: MenuThemeId;
+  onItemClick?: (menuItem: LiveMenuItem) => void;
 }
 
 export const FoodMenuBoard: React.FC<FoodMenuBoardProps> = ({
   initialExpanded = true,
   isVertical = true,
+  themeId = 'peruvian_sazon',
   onItemClick,
 }) => {
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
+  const menuItems = getMenuItemsByTheme(themeId);
 
   if (!isExpanded) {
     return (
@@ -75,7 +79,7 @@ export const FoodMenuBoard: React.FC<FoodMenuBoardProps> = ({
 
       {/* Lista de Platos de la Carta */}
       <div className="p-2 space-y-1.5">
-        {LIVE_MENU_ITEMS.map((item, idx) => (
+        {menuItems.map((item, idx) => (
           <div
             key={item.id}
             onClick={() => onItemClick && onItemClick(item)}

@@ -3,9 +3,11 @@ import {
   LiveGameId,
   LiveGameConfig,
   FoodRushSettings,
+  MenuThemeId,
 } from './types';
 import { AVAILABLE_GAMES, DEFAULT_GAME_CONFIG, LIVE_MENU_ITEMS } from './GameRegistry';
 import { FoodRushGame } from './foodRush/FoodRushGame';
+import { BossBattleGame } from './bossBattle/BossBattleGame';
 import { GameStorageService } from '../../services/gameStorageService';
 import { eventBus } from '../../services/eventBus';
 import { apiService } from '../../services/apiService';
@@ -175,6 +177,31 @@ export const GamesView: React.FC<GamesViewProps> = ({ onOpenObsModal }) => {
       comment: phrase,
     };
     await apiService.simulateEvent(demoEvent);
+  };
+
+  // Sabotage & Rush Hour Simulation Handlers (broadcast to both Local UI & OBS Browser Source)
+  const handleTriggerSabotageFire = async () => {
+    eventBus.broadcast({
+      type: 'GAME_ACTION_RECEIVED',
+      payload: { action: 'sabotage_fire' },
+    });
+    await apiService.sendGameAction('sabotage_fire');
+  };
+
+  const handleExtinguishFire = async () => {
+    eventBus.broadcast({
+      type: 'GAME_ACTION_RECEIVED',
+      payload: { action: 'extinguish_fire' },
+    });
+    await apiService.sendGameAction('extinguish_fire');
+  };
+
+  const handleTriggerRushHour = async () => {
+    eventBus.broadcast({
+      type: 'GAME_ACTION_RECEIVED',
+      payload: { action: 'trigger_rush_hour' },
+    });
+    await apiService.sendGameAction('trigger_rush_hour');
   };
 
   // OBS Overlay URL for Games
@@ -460,6 +487,68 @@ export const GamesView: React.FC<GamesViewProps> = ({ onOpenObsModal }) => {
                     Bocadillo de chat en vivo
                   </span>
                 </button>
+
+                {/* 7. Sabotaje: Cocina en Llamas */}
+                <button
+                  onClick={handleTriggerSabotageFire}
+                  className="p-3 rounded-xl bg-red-950/50 hover:bg-red-900/60 border-2 border-red-500/80 text-left flex flex-col justify-between transition-all group shadow-md shadow-red-950/50"
+                  title="Disparar emergencia de cocina en llamas"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-lg animate-bounce">🚨🔥</span>
+                    <span className="text-[10px] font-mono text-red-200 bg-red-900/80 px-1.5 py-0.5 rounded font-bold">
+                      Sabotaje
+                    </span>
+                  </div>
+                  <span className="text-xs font-black text-red-300 group-hover:text-white">
+                    ¡Cocina en Llamas!
+                  </span>
+                  <span className="text-[10px] text-red-200/80 mt-0.5">
+                    Obliga a viewers a mandar agua/likes
+                  </span>
+                </button>
+
+                {/* 8. Apagar Fuego con Likes o Bebida */}
+                <button
+                  onClick={handleExtinguishFire}
+                  className="p-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/60 text-left flex flex-col justify-between transition-all group"
+                  title="Apagar fuego con agua y likes simulados"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-lg">🧯💧</span>
+                    <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded">
+                      Salvar Cocina
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-cyan-200 group-hover:text-white">
+                    Apagar Fuego
+                  </span>
+                  <span className="text-[10px] text-cyan-300/80 mt-0.5">
+                    Simular lluvia de Likes / Agua
+                  </span>
+                </button>
+
+                {/* 9. Desatar Fiebre Dorada (Rush Hour) */}
+                <button
+                  onClick={handleTriggerRushHour}
+                  className="col-span-2 p-3 rounded-xl bg-gradient-to-r from-amber-950/60 via-yellow-950/40 to-amber-950/60 hover:from-amber-900/70 hover:to-yellow-900/70 border-2 border-yellow-400 text-left flex items-center justify-between transition-all group shadow-lg shadow-yellow-950/40"
+                  title="Activar 45s de Fiebre Dorada con puntos x2"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl animate-spin">✨</span>
+                    <div>
+                      <div className="text-xs font-black text-yellow-300 group-hover:text-white tracking-wide">
+                        ¡DESATAR FIEBRE DORADA (RUSH HOUR)!
+                      </div>
+                      <div className="text-[10px] text-amber-200/80 font-medium">
+                        Activa 45 segundos con efectos dorados y puntos x2
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono bg-yellow-400 text-slate-950 font-black px-2 py-1 rounded-lg">
+                    x2 Pts
+                  </span>
+                </button>
               </div>
 
               {/* Reset Session Leaderboard */}
@@ -655,6 +744,108 @@ export const GamesView: React.FC<GamesViewProps> = ({ onOpenObsModal }) => {
                 </label>
               </div>
 
+              {/* Selector de Temática del Menú */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <ChefHat className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Temática del Menú & Platos:</span>
+                  </span>
+                </label>
+                <div className="space-y-1.5">
+                  {[
+                    {
+                      id: 'peruvian_sazon' as MenuThemeId,
+                      name: '🇵🇪 Sazón Peruana',
+                      desc: 'Chaufa, Pollo a la Brasa, Anticuchos, Salchipapa, Picarones',
+                    },
+                    {
+                      id: 'street_burger' as MenuThemeId,
+                      name: '🍔 Street Burger & Fries',
+                      desc: 'Hamburguesa Smash, Papas Cheddar, Hot Dog, Milkshake',
+                    },
+                    {
+                      id: 'sushi_ramen' as MenuThemeId,
+                      name: '🍣 Sushi & Ramen Bar',
+                      desc: 'Ramen Tonkotsu, Roll Dragón, Gyozas al vapor, Bento',
+                    },
+                  ].map((theme) => {
+                    const isSelected = (config.foodRush.menuThemeId || 'peruvian_sazon') === theme.id;
+                    return (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        onClick={() =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            foodRush: { ...prev.foodRush, menuThemeId: theme.id },
+                          }))
+                        }
+                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-amber-950/40 border-amber-400 text-amber-200 ring-1 ring-amber-400/50'
+                            : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-bold text-white">{theme.name}</div>
+                          <div className="text-[10px] text-slate-400 line-clamp-1">{theme.desc}</div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Meta Comunitaria Rush Hour */}
+              <div className="space-y-2 pt-2 border-t border-slate-800 text-xs">
+                <div className="flex items-center justify-between text-xs text-slate-200 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Meta Rush Hour (Fiebre de Cocina):</span>
+                  </span>
+                  <span className="font-mono text-amber-300 font-bold">
+                    {config.foodRush.rushHourGoalCoins || 50} Monedas
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={200}
+                  step={10}
+                  value={config.foodRush.rushHourGoalCoins || 50}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      foodRush: { ...prev.foodRush, rushHourGoalCoins: Number(e.target.value) },
+                    }))
+                  }
+                  className="w-full accent-amber-400"
+                />
+              </div>
+
+              {/* Anuncio por Voz (TTS del Chef) */}
+              <div className="space-y-2 pt-2 border-t border-slate-800 text-xs">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-slate-200 font-bold flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Voz del Chef (TTS cantar @usuario y plato pedido)</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={config.foodRush.ttsEnabled !== false}
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        foodRush: { ...prev.foodRush, ttsEnabled: e.target.checked },
+                      }))
+                    }
+                    className="rounded bg-slate-950 border-slate-700 text-cyan-500 focus:ring-0"
+                  />
+                </label>
+              </div>
+
               {/* Save Settings Button */}
               <button
                 onClick={handleSaveSettings}
@@ -719,6 +910,11 @@ export const GamesView: React.FC<GamesViewProps> = ({ onOpenObsModal }) => {
                 isPreview={true}
                 aspectRatio={aspectMode}
                 configOverride={config}
+              />
+            ) : config.activeGameId === 'boss_battle' ? (
+              <BossBattleGame
+                isPreview={true}
+                aspectRatio={aspectMode}
               />
             ) : config.activeGameId === 'none' ? (
               <div className="w-full max-w-[480px] h-[480px] bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center p-6 text-center text-slate-400">

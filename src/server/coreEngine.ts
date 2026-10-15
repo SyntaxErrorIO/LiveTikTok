@@ -21,8 +21,11 @@ export interface SSEBroadcastMessage {
     | 'LEADERBOARD_UPDATED'
     | 'CONNECTION_STATUS'
     | 'MASTER_SWITCH'
-    | 'FAIL_SAFE_STATE';
-  payload: any;
+    | 'FAIL_SAFE_STATE'
+    | 'GAME_CONFIG_UPDATED'
+    | 'GAME_ACTION';
+  payload?: any;
+  config?: any;
   timestamp: number;
 }
 

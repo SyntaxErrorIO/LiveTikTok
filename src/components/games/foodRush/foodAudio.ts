@@ -159,6 +159,63 @@ class FoodAudioEngine {
       noise.start();
     } catch {}
   }
+
+  /**
+   * Fanfarria triunfal para Rush Hour / Fiebre Dorada
+   */
+  public playFanfare() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGain) return;
+    try {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        if (!this.ctx || !this.masterGain) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const time = this.ctx.currentTime + idx * 0.09;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+
+        gain.gain.setValueAtTime(0.25, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(time);
+        osc.stop(time + 0.4);
+      });
+    } catch {}
+  }
+
+  /**
+   * Sonido simpático de la ratita chef Remy (chirrido alegre / squeak musical)
+   */
+  public playRemySqueak() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGain) return;
+    try {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1400, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(2200, this.ctx.currentTime + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(1600, this.ctx.currentTime + 0.16);
+
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.2);
+    } catch {}
+  }
 }
 
 export const foodAudio = new FoodAudioEngine();

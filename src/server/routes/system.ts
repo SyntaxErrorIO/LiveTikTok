@@ -225,6 +225,8 @@ router.get('/api/overlay/state', (req: Request, res: Response) => {
   const leaderboard = StateStore.getLeaderboard(user.id);
   const topDonors = leaderboard.slice(0, 5);
 
+  const gameConfig = StateStore.getGameConfig(user.id);
+
   return res.json({
     success: true,
     user: {
@@ -240,7 +242,66 @@ router.get('/api/overlay/state', (req: Request, res: Response) => {
       lastUpdated: diamondCounter.lastUpdated || Date.now(),
     },
     topDonors,
+    gameConfig,
   });
+});
+
+// Interactive Games Config: Read endpoint (supports session or OBS overlayToken)
+router.get('/api/games/config', (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  let targetUserId: string | null = authedReq.user ? authedReq.user.userId : null;
+
+  const overlayToken = typeof req.query.overlayToken === 'string' ? req.query.overlayToken.trim() : undefined;
+  if (!targetUserId && overlayToken) {
+    const user = AuthManager.getUserByOverlayToken(overlayToken);
+    if (user) targetUserId = user.id;
+  }
+
+  if (!targetUserId) {
+    return res.status(401).json({ success: false, error: 'No autorizado para consultar la configuración de juegos.' });
+  }
+
+  const config = StateStore.getGameConfig(targetUserId);
+  return res.json({ success: true, config });
+});
+
+// Interactive Games Config: Save and broadcast to OBS CEF in real-time
+router.post('/api/games/config', requireAuth, (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  const userId = authedReq.user!.userId;
+  const config = req.body;
+
+  StateStore.saveGameConfig(config, userId);
+
+  // Broadcast to all SSE connections including OBS CEF
+  coreEngine.broadcast(
+    {
+      type: 'GAME_CONFIG_UPDATED',
+      config,
+      timestamp: Date.now(),
+    },
+    userId
+  );
+
+  return res.json({ success: true, config });
+});
+
+// Interactive Games: Trigger live actions (Fire sabotage, Rush Hour, Boss attack) and broadcast to OBS
+router.post('/api/games/action', requireAuth, (req: Request, res: Response) => {
+  const authedReq = req as AuthedRequest;
+  const userId = authedReq.user!.userId;
+  const actionPayload = req.body;
+
+  coreEngine.broadcast(
+    {
+      type: 'GAME_ACTION',
+      payload: actionPayload,
+      timestamp: Date.now(),
+    },
+    userId
+  );
+
+  return res.json({ success: true, action: actionPayload });
 });
 
 router.post('/api/settings/pause', requireAuth, (req: Request, res: Response) => {

@@ -132,6 +132,12 @@ export class DatabaseManager {
         timestamp INTEGER,
         data TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS games_config (
+        user_id TEXT PRIMARY KEY,
+        data TEXT,
+        updated_at INTEGER
+      );
     `);
 
     // Automatic migration from existing JSON files in DATA_DIR

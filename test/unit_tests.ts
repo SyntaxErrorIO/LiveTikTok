@@ -2337,6 +2337,23 @@ async function runAllTests() {
     const chefStationCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/games/foodRush/RealisticChefStation.tsx'), 'utf-8');
     assert(chefStationCode.includes('Mesa de Salteado en Vivo'), 'RealisticChefStation debe incluir la mesa de preparación culinaria en vivo');
     assert(chefStationCode.includes('PREP DE MESA'), 'RealisticChefStation debe incluir tabla de cortar y mise en place');
+    assert(chefStationCode.includes('FIEBRE DORADA'), 'RealisticChefStation debe incluir soporte para modo Fiebre Dorada');
+    assert(chefStationCode.includes('COCINA EN LLAMAS'), 'RealisticChefStation debe incluir evento de sabotaje con cocina en llamas');
+
+    // 7. Nuevas mecánicas virales: Rush Hour, Sabotaje, Temáticas y Boss Battle
+    const { getMenuItemsByTheme } = await import('../src/components/games/GameRegistry');
+    const burgerMenu = getMenuItemsByTheme('street_burger');
+    const peMenu = getMenuItemsByTheme('peruvian_sazon');
+    const sushiMenu = getMenuItemsByTheme('sushi_ramen');
+    assert(burgerMenu.length >= 4, 'Temática Street Burger debe tener al menos 4 platos');
+    assert(peMenu.length >= 4, 'Temática Sazón Peruana debe tener al menos 4 platos');
+    assert(sushiMenu.length >= 4, 'Temática Sushi & Ramen debe tener al menos 4 platos');
+
+    assert(overlayCode.includes('BossBattleGame'), 'ObsOverlayScreen debe soportar BossBattleGame');
+    assert(overlayCode.includes('syncFromServer'), 'ObsOverlayScreen debe sincronizar configuración con el backend vía syncFromServer');
+    assert(gamesViewCode.includes('BossBattleGame'), 'GamesView debe renderizar BossBattleGame cuando esté seleccionado');
+    assert(foodRushCode.includes('Fiebre de Cocina'), 'FoodRushGame debe incluir barra de Meta Comunitaria');
+    assert(foodRushCode.includes('isFireEmergency'), 'FoodRushGame debe incluir lógica de sabotaje de fuego');
   });
 
   console.log('\n======================================================');

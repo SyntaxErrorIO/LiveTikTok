@@ -6,7 +6,8 @@ import {
   LiveDish,
   LiveMenuItem,
 } from '../types';
-import { QUICK_DISHES, VIP_DISHES, DEFAULT_GAME_CONFIG, LIVE_MENU_ITEMS } from '../GameRegistry';
+import { QUICK_DISHES, VIP_DISHES, DEFAULT_GAME_CONFIG, LIVE_MENU_ITEMS, getMenuItemsByTheme } from '../GameRegistry';
+import confetti from 'canvas-confetti';
 import { StreetFoodScenery } from './FoodRushVisuals';
 import { RealisticChefStation } from './RealisticChefStation';
 import { FoodMenuBoard } from './FoodMenuBoard';
@@ -29,6 +30,7 @@ import {
   Clock,
   Layers,
   ScrollText,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface FoodRushGameProps {
@@ -72,6 +74,32 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
   const [boostActiveUntil, setBoostActiveUntil] = useState(0);
   const [recentCheer, setRecentCheer] = useState<{ user: string; text: string } | null>(null);
   const [floatingHearts, setFloatingHearts] = useState<{ id: string; x: number }[]>([]);
+
+  // 1. Meta Comunitaria ("Fiebre de Cocina / Rush Hour")
+  const [rushCoins, setRushCoins] = useState(0);
+  const [rushHourActiveUntil, setRushHourActiveUntil] = useState(0);
+  const [rushSecondsLeft, setRushSecondsLeft] = useState(0);
+  const isRushHour = rushHourActiveUntil > Date.now();
+
+  // 2. Evento de Sabotaje ("¡Se quema la parrilla!")
+  const [isFireEmergency, setIsFireEmergency] = useState(Boolean(config.foodRush.fireSabotageActive));
+  const [extinguishProgress, setExtinguishProgress] = useState(0);
+
+  // Rush Hour countdown tick
+  useEffect(() => {
+    if (rushHourActiveUntil <= 0) {
+      setRushSecondsLeft(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((rushHourActiveUntil - Date.now()) / 1000));
+      setRushSecondsLeft(remaining);
+      if (remaining <= 0) {
+        setRushHourActiveUntil(0);
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, [rushHourActiveUntil]);
 
   // Sound
   const [soundMuted, setSoundMuted] = useState(!config.foodRush.soundEnabled);
@@ -161,8 +189,70 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         // Check if VIP or Quick order according to settings
         const isVip = totalDiamonds >= config.foodRush.vipOrderMinCoins;
 
-        // Choose Dish based on exact Live stream mapping requested by the user:
-        // "una flor solo jugo y corazon o quereme segundo de chaufa"
+        // 1. Evento de Sabotaje: Regalo incendiario activa Cocina en Llamas
+        if (
+          giftLower.includes('fuego') ||
+          giftLower.includes('llama') ||
+          giftLower.includes('picante') ||
+          giftLower.includes('fire') ||
+          giftLower.includes('diablo') ||
+          giftLower.includes('chile')
+        ) {
+          setIsFireEmergency(true);
+          setExtinguishProgress(0);
+          foodAudio.playFireWoosh();
+        }
+
+        // 2. Si hay fuego y mandan bebidas o agua, los espectadores apagan la cocina
+        if (
+          isFireEmergency &&
+          (giftLower.includes('agua') ||
+            giftLower.includes('jugo') ||
+            giftLower.includes('refresco') ||
+            giftLower.includes('ice') ||
+            giftLower.includes('hielo') ||
+            giftLower.includes('water') ||
+            giftLower.includes('drink') ||
+            giftLower.includes('chicha') ||
+            giftLower.includes('flor') ||
+            giftLower.includes('rosa'))
+        ) {
+          setExtinguishProgress((prev) => {
+            const next = prev + 12;
+            if (next >= 30) {
+              setIsFireEmergency(false);
+              foodAudio.playFanfare();
+              try {
+                confetti({ particleCount: 70, spread: 80, origin: { y: 0.3 } });
+              } catch {}
+            }
+            return Math.min(30, next);
+          });
+        }
+
+        // 3. Meta Comunitaria ("Fiebre de Cocina / Rush Hour")
+        setRushCoins((prev) => {
+          const goal = config.foodRush.rushHourGoalCoins || 50;
+          const next = prev + totalDiamonds;
+          if (next >= goal && rushHourActiveUntil <= Date.now()) {
+            setRushHourActiveUntil(Date.now() + 45000); // 45 segundos de Fiebre Dorada
+            foodAudio.playFanfare();
+            try {
+              confetti({
+                particleCount: 120,
+                spread: 100,
+                origin: { y: 0.25 },
+                colors: ['#facc15', '#f59e0b', '#fbbf24', '#ffffff', '#eab308'],
+              });
+            } catch {}
+            return 0;
+          }
+          return next;
+        });
+
+        // 4. Selección del plato según la temática activa (Street Burger, Sazón Peruana, Sushi & Ramen)
+        const activeTheme = config.foodRush.menuThemeId || 'peruvian_sazon';
+        const themeItems = getMenuItemsByTheme(activeTheme);
         let selectedDish: LiveDish;
 
         if (
@@ -171,16 +261,16 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           giftLower.includes('rose') ||
           totalDiamonds === 1
         ) {
-          // Flor / Rosa ➔ Solo Jugo / Refresco Helado
-          selectedDish =
-            QUICK_DISHES.find((d) => d.id === 'dish-jugo') || {
-              id: 'dish-jugo',
-              name: 'Solo Jugo / Refresco Helado',
-              emoji: '🥤',
-              category: 'quick',
-              cookTimeSec: 2.8,
-              points: 15,
-            };
+          // Flor / Rosa ➔ Solo Jugo / Bebida helada del tema
+          const matched = themeItems.find((i) => i.coins === 1) || themeItems[0];
+          selectedDish = {
+            id: matched.id,
+            name: matched.dishName,
+            emoji: matched.emoji,
+            category: 'quick',
+            cookTimeSec: 2.8,
+            points: 15,
+          };
         } else if (
           giftLower.includes('corazon') ||
           giftLower.includes('corazón') ||
@@ -189,16 +279,16 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           giftLower.includes('love') ||
           (totalDiamonds >= 5 && totalDiamonds <= 10)
         ) {
-          // Corazón / Quereme ➔ Segundo de Chaufa Especial
-          selectedDish =
-            VIP_DISHES.find((d) => d.id === 'dish-chaufa-vip') || {
-              id: 'dish-chaufa-vip',
-              name: 'Segundo de Chaufa Especial VIP',
-              emoji: '🍲🔥',
-              category: 'vip',
-              cookTimeSec: 4.2,
-              points: 65,
-            };
+          // Corazón / Quereme ➔ Segundo de Chaufa / Especial del tema
+          const matched = themeItems.find((i) => i.coins === 5) || themeItems[1] || themeItems[0];
+          selectedDish = {
+            id: matched.id,
+            name: matched.dishName,
+            emoji: matched.emoji,
+            category: 'vip',
+            cookTimeSec: 4.2,
+            points: 65,
+          };
         } else if (
           giftLower.includes('lomo') ||
           giftLower.includes('dona') ||
@@ -206,8 +296,15 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           giftLower.includes('perfume') ||
           (totalDiamonds > 10 && totalDiamonds < 50)
         ) {
-          // 15-20 Monedas ➔ Lomo Saltado Flambeado VIP
-          selectedDish = VIP_DISHES.find((d) => d.id === 'dish-vip-lomo') || VIP_DISHES[1];
+          const matched = themeItems.find((i) => i.coins >= 10 && i.coins <= 25) || themeItems[2] || VIP_DISHES[1];
+          selectedDish = {
+            id: matched.id,
+            name: matched.dishName,
+            emoji: matched.emoji,
+            category: 'vip',
+            cookTimeSec: 4.8,
+            points: 75,
+          };
         } else if (
           giftLower.includes('leon') ||
           giftLower.includes('león') ||
@@ -217,8 +314,15 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           giftLower.includes('galaxia') ||
           totalDiamonds >= 50
         ) {
-          // 50+ Monedas ➔ Banquete Imperial Supremo
-          selectedDish = VIP_DISHES.find((d) => d.id === 'dish-vip-lobster') || VIP_DISHES[0];
+          const matched = themeItems.find((i) => i.coins >= 50) || themeItems[themeItems.length - 1] || VIP_DISHES[0];
+          selectedDish = {
+            id: matched.id,
+            name: matched.dishName,
+            emoji: matched.emoji,
+            category: 'vip',
+            cookTimeSec: 5.5,
+            points: 100,
+          };
         } else if (isVip) {
           const idx = Math.floor(Math.random() * VIP_DISHES.length);
           selectedDish = VIP_DISHES[idx];
@@ -227,11 +331,16 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           selectedDish = QUICK_DISHES[idx];
         }
 
-        // Calculate points (VIP awards 2x bonus points + diamond weight)
+        // Calculate points: VIP awards bonus; Rush Hour grants double points x2!
         const basePoints = selectedDish.points;
-        const pointsEarned = isVip
+        const rawPoints = isVip
           ? basePoints * 2 + totalDiamonds * 5
           : basePoints + totalDiamonds * 2;
+        const pointsEarned = isRushHour ? Math.round(rawPoints * 2) : rawPoints;
+
+        // Regla solicitada: 8 segundos base normales sin potenciadores + 3 segundos adicionales por cada nivel o mayor tamaño de regalo
+        const giftTierBonus = Math.min(4, Math.floor(totalDiamonds / 3));
+        const baseDurationSec = 8.0 + giftTierBonus * 3.0;
 
         const newOrder: FoodOrder = {
           id: `order-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -246,18 +355,13 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           giftName,
           repeatCount,
           status: 'queued',
-          cookDurationMs: (selectedDish.cookTimeSec || config.foodRush.baseCookingTimeSec) * 1000,
+          cookDurationMs: baseDurationSec * 1000,
           cookProgress: 0,
           createdAt: Date.now(),
           pointsEarned,
         };
 
-        // Activación de la presentación en toda la pantalla (Showcase)
-        if (config.foodRush.fullScreenShowcaseEnabled !== false) {
-          setFullScreenOrder(newOrder);
-        }
-
-        // Audio de aviso de nueva orden
+        // Audio de aviso de nueva orden en cola
         if (isVip) {
           foodAudio.playFireWoosh();
         } else {
@@ -271,11 +375,36 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           }
           return [...prev, newOrder];
         });
+
+        // Notificación flotante de que la orden está en preparación
+        setRecentCheer({
+          user: newOrder.username,
+          text: `¡Pidió ${newOrder.dishName}! En preparación, espere... 🍳⏳`,
+        });
+        setTimeout(() => {
+          setRecentCheer((curr) => (curr?.text?.includes('En preparación') ? null : curr));
+        }, 4000);
       }
 
-      // 2. Like Event: Accelerate Cooking Speed
+      // 2. Like Event: Accelerate Cooking Speed & Extinguish Fire if in emergency
       else if (event.type === 'like' && config.foodRush.likesBoostEnabled) {
         const count = Number(event.data.likeCount) || 1;
+
+        // Si la parrilla está en llamas, los Likes de los espectadores ayudan a apagar el fuego
+        if (isFireEmergency) {
+          setExtinguishProgress((prev) => {
+            const next = prev + (count >= 5 ? 3 : 1);
+            if (next >= 30) {
+              setIsFireEmergency(false);
+              foodAudio.playFanfare();
+              try {
+                confetti({ particleCount: 70, spread: 80, origin: { y: 0.3 } });
+              } catch {}
+            }
+            return Math.min(30, next);
+          });
+        }
+
         setLikesCount((prev) => {
           const next = prev + count;
           if (next >= config.foodRush.likesThreshold) {
@@ -299,13 +428,31 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       else if (event.type === 'comment' && config.foodRush.commentsBoostEnabled) {
         const comment = event.data.comment?.trim();
         if (comment) {
-          setRecentCheer({
-            user: event.user.nickname || event.user.username,
-            text: comment.length > 32 ? comment.substring(0, 32) + '...' : comment,
-          });
-          // Slight cooking boost
-          setBoostActiveUntil((prev) => Math.max(prev, Date.now() + 4000));
-          setSpeedMultiplier((prev) => Math.min(2.5, Math.max(1.5, prev)));
+          const lower = comment.toLowerCase();
+          const isCallingRemy =
+            lower.includes('remy') ||
+            lower.includes('rata') ||
+            lower.includes('ratita') ||
+            lower.includes('queso') ||
+            lower.includes('ratatouille');
+
+          if (isCallingRemy) {
+            foodAudio.playRemySqueak();
+            setRecentCheer({
+              user: 'Remy',
+              text: `¡${event.user.nickname || event.user.username} llamó a Remy! +15% Sazón 🧀✨`,
+            });
+            setBoostActiveUntil((prev) => Math.max(prev, Date.now() + 6000));
+            setSpeedMultiplier((prev) => Math.min(2.5, prev + 0.2));
+          } else {
+            setRecentCheer({
+              user: event.user.nickname || event.user.username,
+              text: comment.length > 32 ? comment.substring(0, 32) + '...' : comment,
+            });
+            // Slight cooking boost
+            setBoostActiveUntil((prev) => Math.max(prev, Date.now() + 4000));
+            setSpeedMultiplier((prev) => Math.min(2.5, Math.max(1.5, prev)));
+          }
 
           setTimeout(() => {
             setRecentCheer(null);
@@ -313,22 +460,59 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         }
       }
     },
-    [config, recordCustomerOrder]
+    [config, recordCustomerOrder, isFireEmergency, rushHourActiveUntil]
   );
 
   // Subscribe to EventBus and SSE Stream
   useEffect(() => {
+    const handleGameAction = (actionPayload: any) => {
+      if (!actionPayload) return;
+      const action = actionPayload.action;
+      if (action === 'sabotage_fire') {
+        setIsFireEmergency(true);
+        setExtinguishProgress(0);
+        foodAudio.playFireWoosh();
+      } else if (action === 'extinguish_fire') {
+        setExtinguishProgress((prev) => {
+          const next = prev + 15;
+          if (next >= 30) {
+            setIsFireEmergency(false);
+            foodAudio.playFanfare();
+            try {
+              confetti({ particleCount: 70, spread: 80, origin: { y: 0.3 } });
+            } catch {}
+          }
+          return Math.min(30, next);
+        });
+      } else if (action === 'trigger_rush_hour') {
+        setRushHourActiveUntil(Date.now() + 45000);
+        foodAudio.playFanfare();
+        try {
+          confetti({
+            particleCount: 120,
+            spread: 100,
+            origin: { y: 0.25 },
+            colors: ['#facc15', '#f59e0b', '#fbbf24', '#ffffff'],
+          });
+        } catch {}
+      }
+    };
+
     // 1. Local Bus (Simulator & Web UI actions)
     const unsubBus = eventBus.subscribe((msg) => {
       if (msg.type === 'TIKTOK_EVENT_RECEIVED') {
         handleIncomingTikTokEvent(msg.payload);
+      } else if (msg.type === 'GAME_ACTION_RECEIVED') {
+        handleGameAction(msg.payload);
       }
     });
 
-    // 2. SSE Server Stream (Real TikTok live events)
+    // 2. SSE Server Stream (Real TikTok live events & remote actions from OBS)
     const unsubSSE = apiService.onSSEMessage((data) => {
       if (data.type === 'TIKTOK_EVENT' && data.payload) {
         handleIncomingTikTokEvent(data.payload);
+      } else if (data.type === 'GAME_ACTION') {
+        handleGameAction(data.payload);
       }
     });
 
@@ -374,6 +558,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
   // Cooking progress tick
   useEffect(() => {
     if (!currentOrder || currentOrder.status !== 'cooking') return;
+    if (isFireEmergency) return; // Si la parrilla está en llamas, la cocción se pausa hasta apagar el fuego
 
     const tickIntervalMs = 100;
     const progressPerTick = (tickIntervalMs / currentOrder.cookDurationMs) * 100 * speedMultiplier;
@@ -393,7 +578,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
     }, tickIntervalMs);
 
     return () => clearInterval(interval);
-  }, [currentOrder?.id, currentOrder?.status, currentOrder?.cookDurationMs, speedMultiplier]);
+  }, [currentOrder?.id, currentOrder?.status, currentOrder?.cookDurationMs, speedMultiplier, isFireEmergency]);
 
   // Finish cooking: Ring bell, update leaderboard, clear for next order
   const handleFinishCooking = useCallback(
@@ -404,6 +589,11 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       setCompletedOrder(finishedOrder);
       recordCustomerOrder(finishedOrder);
 
+      // Activación de la presentación en toda la pantalla (Showcase) al terminar de cocinar
+      if (config.foodRush.fullScreenShowcaseEnabled !== false) {
+        setFullScreenOrder(finishedOrder);
+      }
+
       // Keep serving celebration on screen briefly
       setTimeout(() => {
         setIsServing(false);
@@ -412,11 +602,24 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         setCompletedOrder(null);
       }, 1600);
     },
-    [recordCustomerOrder]
+    [recordCustomerOrder, config.foodRush.fullScreenShowcaseEnabled]
   );
 
   // Top 3 Customers
   const top3 = topCustomers.slice(0, 3);
+
+  // Mini-boost cuando el streamer o espectador interactúa con Remy
+  const handleRemyBoost = useCallback(() => {
+    setSpeedMultiplier((prev) => Math.min(3.0, prev + 0.15));
+    setBoostActiveUntil(Date.now() + 8000);
+    setRecentCheer({
+      user: 'Remy',
+      text: '¡Sazón Secreto activado! +15% velocidad 🧀⚡',
+    });
+    setTimeout(() => {
+      setRecentCheer((curr) => (curr?.user === 'Remy' ? null : curr));
+    }, 3000);
+  }, []);
 
   // 9:16 vertical style wrapper vs full responsive wrapper
   const isVertical = aspectRatio === '9:16';
@@ -468,6 +671,35 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
             <Heart className="w-6 h-6 fill-rose-500 filter drop-shadow-[0_0_8px_#f43f5e]" />
           </div>
         ))}
+      </div>
+
+      {/* BARRA SUPERIOR: META COMUNITARIA ("FIEBRE DE COCINA / RUSH HOUR") */}
+      <div className="relative z-30 px-3 py-1.5 bg-black/60 backdrop-blur-md border-b border-amber-500/30">
+        {isRushHour ? (
+          <div className="w-full flex items-center justify-between px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-500/30 border border-yellow-300 shadow-[0_0_15px_#facc15] animate-pulse text-amber-200">
+            <div className="flex items-center gap-2 font-black text-xs">
+              <span className="text-base animate-spin">✨</span>
+              <span className="tracking-wider">¡FIEBRE DORADA ACTIVA · PUNTOS X2!</span>
+            </div>
+            <div className="px-2 py-0.5 rounded bg-black/70 font-black text-yellow-300 border border-yellow-400/60 font-mono text-xs">
+              ⏱ {rushSecondsLeft}s
+            </div>
+          </div>
+        ) : (
+          <div className="w-full flex items-center justify-between gap-2 text-xs font-mono">
+            <div className="flex items-center gap-1.5 font-bold text-amber-300 truncate">
+              <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span>Fiebre de Cocina:</span>
+              <span className="text-white font-black">{rushCoins} / {config.foodRush.rushHourGoalCoins || 50} 🪙</span>
+            </div>
+            <div className="w-32 sm:w-40 h-2.5 rounded-full bg-slate-900 overflow-hidden border border-amber-500/40 shrink-0">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 transition-all duration-300 rounded-full"
+                style={{ width: `${Math.min(100, (rushCoins / (config.foodRush.rushHourGoalCoins || 50)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TOP HEADER: Top 3 Best Customers Widget, Menu Toggle & Live Speed Gauge */}
@@ -544,6 +776,16 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Botón interactivo para saludar / recibir boost de la ratita Remy */}
+            <button
+              onClick={handleRemyBoost}
+              className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-cyan-950/70 border border-cyan-500/50 text-cyan-300 hover:text-white transition-colors"
+              title="Saludar a Remy y activar boost culinario"
+            >
+              <span>🐀</span>
+              <span className="hidden sm:inline">Remy</span>
+            </button>
+
             {/* Botón para alternar visibilidad de la Carta del Puesto */}
             <button
               onClick={() => setIsMenuOpen((prev) => !prev)}
@@ -576,6 +818,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           <FoodMenuBoard
             initialExpanded={true}
             isVertical={isVertical}
+            themeId={config.foodRush.menuThemeId || 'peruvian_sazon'}
             onItemClick={handleMenuItemClick}
           />
         </div>
@@ -600,6 +843,10 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           cookProgress={currentOrder?.cookProgress || 0}
           currentDish={currentOrder}
           speedMultiplier={speedMultiplier}
+          isRushHour={isRushHour}
+          isFireEmergency={isFireEmergency}
+          extinguishProgress={extinguishProgress}
+          onRemyClick={handleRemyBoost}
         />
       </div>
 
@@ -737,6 +984,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           order={fullScreenOrder}
           onClose={() => setFullScreenOrder(null)}
           durationSec={config.foodRush.fullScreenDurationSec || 3.5}
+          ttsEnabled={config.foodRush.ttsEnabled !== false}
         />
       )}
     </div>

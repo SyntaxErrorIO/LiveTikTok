@@ -24,7 +24,34 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+function resolvePort(): number {
+  // 1. CLI flag passed by runner (e.g. npm run dev --port 3000)
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  // 2. DEFAULT_APP_PORT or APP_PORT
+  if (process.env.DEFAULT_APP_PORT) {
+    const parsed = parseInt(process.env.DEFAULT_APP_PORT, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (process.env.APP_PORT) {
+    const parsed = parseInt(process.env.APP_PORT, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  // 3. If NGINX is occupying PORT (e.g. PORT=8080 and NGINX_PORT=8080), fallback to 3000
+  if (process.env.NGINX_PORT && process.env.PORT === process.env.NGINX_PORT) {
+    return 3000;
+  }
+  const envPort = Number(process.env.PORT);
+  if (envPort && envPort !== 8080) {
+    return envPort;
+  }
+  return 3000;
+}
+
+const PORT = resolvePort();
 const isProd = process.env.NODE_ENV === 'production';
 
 // 1. Comprehensive Security Headers (CSP, no X-XSS-Protection, HSTS, Sniff protection)

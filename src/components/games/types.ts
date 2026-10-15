@@ -1,5 +1,7 @@
 export type LiveGameId = 'street_food_rush' | 'boss_battle' | 'gift_race' | 'none';
 
+export type MenuThemeId = 'peruvian_sazon' | 'street_burger' | 'sushi_ramen';
+
 export interface LiveDish {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export interface LiveDish {
   cookTimeSec: number;
   points: number;
   soundName?: string;
+  themeId?: MenuThemeId;
 }
 
 export interface LiveMenuItem {
@@ -18,6 +21,7 @@ export interface LiveMenuItem {
   description: string; // 'Jugo frutal helado con cañita'
   coins: number;       // 1
   isVip?: boolean;
+  themeId?: MenuThemeId;
 }
 
 export interface FoodRushSettings {
@@ -34,6 +38,21 @@ export interface FoodRushSettings {
   menuDisplayMode: 'always' | 'compact' | 'hidden';
   fullScreenShowcaseEnabled: boolean;
   fullScreenDurationSec: number;
+  // Nuevas mecánicas interactivas y virales:
+  menuThemeId: MenuThemeId;
+  rushHourGoalCoins: number;
+  ttsEnabled: boolean;
+  fireSabotageActive?: boolean;
+}
+
+export interface BossBattleSettings {
+  bossName: string;
+  bossMaxHp: number;
+  bossCurrentHp: number;
+  bossElement: 'dragon_fire' | 'stone_titan' | 'cyber_demon';
+  rewardCoinsGoal: number;
+  soundEnabled: boolean;
+  shieldPercentage: number;
 }
 
 export interface LiveGameConfig {
@@ -43,6 +62,7 @@ export interface LiveGameConfig {
   showTopCustomers: boolean;
   soundVolume: number;
   foodRush: FoodRushSettings;
+  bossBattle?: BossBattleSettings;
 }
 
 export interface FoodOrder {

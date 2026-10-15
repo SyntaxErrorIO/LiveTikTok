@@ -24,6 +24,7 @@ import {
   LeaderboardRepository,
   LogsRepository,
   BackupsRepository,
+  GamesRepository,
 } from './db';
 
 export {
@@ -97,6 +98,15 @@ export class StateStore {
 
   public static saveConnection(conn: ConnectionConfig, userId?: string): void {
     SettingsRepository.saveConnection(conn, userId);
+  }
+
+  // Games Config Entity (Interactive Live Games: Street Food Rush, Boss Battle, etc.)
+  public static getGameConfig(userId?: string): any {
+    return GamesRepository.getGameConfig(userId);
+  }
+
+  public static saveGameConfig(config: any, userId?: string): void {
+    GamesRepository.saveGameConfig(config, userId);
   }
 
   // Counters Entity

@@ -5,6 +5,7 @@ import { RateLimiter } from '../rateLimiter';
 import { SystemLogger } from '../systemLogger';
 import { FailSafeManager } from '../failSafeManager';
 import { AuthedRequest } from '../types';
+import { StateStore } from '../stateStore';
 import { requireAuth } from '../middleware/auth';
 
 const router = Router();
@@ -57,6 +58,13 @@ router.get('/stream', (req: Request, res: Response) => {
   });
 
   res.write(`data: ${JSON.stringify({ type: 'CONNECTED', userId: targetUserId, timestamp: Date.now() })}\n\n`);
+
+  try {
+    const initialGameConfig = StateStore.getGameConfig(targetUserId);
+    if (initialGameConfig) {
+      res.write(`data: ${JSON.stringify({ type: 'GAME_CONFIG_UPDATED', config: initialGameConfig, timestamp: Date.now() })}\n\n`);
+    }
+  } catch {}
 
   const unsubscribe = coreEngine.subscribeSSE(
     (msg: SSEBroadcastMessage) => {

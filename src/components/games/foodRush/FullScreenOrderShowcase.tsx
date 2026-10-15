@@ -1,20 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { FoodOrder } from '../types';
 import { RealisticFoodItem } from './FoodRealisticVisuals';
-import { Sparkles, Flame, Trophy, X, ChefHat, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Flame, Trophy, X, ChefHat, CheckCircle2, Volume2 } from 'lucide-react';
+import { audioEngine } from '../../../services/audioEngine';
 
 interface FullScreenOrderShowcaseProps {
   order: FoodOrder | null;
   onClose: () => void;
   durationSec?: number;
+  ttsEnabled?: boolean;
 }
 
 export const FullScreenOrderShowcase: React.FC<FullScreenOrderShowcaseProps> = ({
   order,
   onClose,
   durationSec = 3.5,
+  ttsEnabled = true,
 }) => {
   const [progress, setProgress] = useState(100);
+
+  // Anuncio por voz (TTS) del Chef al cantar la orden con audioEngine (Web Speech API)
+  useEffect(() => {
+    if (!order) return;
+
+    if (ttsEnabled) {
+      try {
+        const cleanUser = order.username.replace(/[^a-zA-Z0-9_]/g, '');
+        const speechText = order.isVip
+          ? `¡Atención! ¡El cliente arroba ${cleanUser} acaba de ordenar ${order.dishName}!`
+          : `¡Marchando ${order.dishName} para arroba ${cleanUser}!`;
+        audioEngine.speakText(speechText);
+      } catch {}
+    }
+  }, [order?.id, ttsEnabled]);
 
   useEffect(() => {
     if (!order) return;
@@ -106,12 +124,8 @@ export const FullScreenOrderShowcase: React.FC<FullScreenOrderShowcaseProps> = (
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)] bg-gradient-to-r from-amber-200 via-white to-amber-300 bg-clip-text text-transparent">
             {order.dishName}
           </h2>
-          <p className="text-xs text-slate-300 font-medium mt-0.5">
-            {isChaufa
-              ? 'Arroz chaufa al wok humeante preparado al momento para el Live'
-              : isJugo
-              ? 'Solo Jugo frutal helado con cañita y cubos de hielo refrescantes'
-              : 'Preparación especial directo a la mesa del espectador'}
+          <p className="text-xs text-amber-300 font-bold mt-1 bg-black/50 px-3 py-1 rounded-full border border-amber-500/40 inline-block">
+            ¡Listo! Súrvete, @{order.username} 🍽️✨ ¡Buen provecho!
           </p>
         </div>
       </div>

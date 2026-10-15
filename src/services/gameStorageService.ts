@@ -1,6 +1,7 @@
 import { LiveGameConfig, CustomerLeaderboardEntry } from '../components/games/types';
 import { DEFAULT_GAME_CONFIG } from '../components/games/GameRegistry';
 import { eventBus } from './eventBus';
+import { apiService } from './apiService';
 
 const GAME_STORAGE_KEYS = {
   CONFIG: 'livetrigger_game_config_v1',
@@ -21,6 +22,10 @@ export class GameStorageService {
           ...DEFAULT_GAME_CONFIG.foodRush,
           ...(parsed.foodRush || {}),
         },
+        bossBattle: {
+          ...DEFAULT_GAME_CONFIG.bossBattle,
+          ...(parsed.bossBattle || {}),
+        },
       };
     } catch {
       return DEFAULT_GAME_CONFIG;
@@ -31,11 +36,8 @@ export class GameStorageService {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(GAME_STORAGE_KEYS.CONFIG, JSON.stringify(config));
-      // Notify bus so OBS overlay window immediately synchronizes
-      eventBus.broadcast({
-        type: 'MASTER_SWITCH_CHANGED', // or notify through bus
-        payload: true,
-      });
+
+      // Sincronización en vivo entre pestañas
       if ('BroadcastChannel' in window) {
         try {
           const bc = new BroadcastChannel('livetrigger_games_channel');
@@ -43,7 +45,38 @@ export class GameStorageService {
           bc.close();
         } catch {}
       }
+
+      // Sincronización Backend para navegadores independientes (OBS Studio CEF / TikTok Live Studio)
+      apiService.saveGameConfig(config).catch(() => {});
     } catch {}
+  }
+
+  /**
+   * Sincroniza la configuración del juego desde el servidor backend (crucial para OBS Studio CEF)
+   */
+  public static async syncFromServer(overlayToken?: string): Promise<LiveGameConfig> {
+    try {
+      const serverConfig = await apiService.getGameConfig(overlayToken);
+      if (serverConfig && serverConfig.activeGameId) {
+        const merged: LiveGameConfig = {
+          ...DEFAULT_GAME_CONFIG,
+          ...serverConfig,
+          foodRush: {
+            ...DEFAULT_GAME_CONFIG.foodRush,
+            ...(serverConfig.foodRush || {}),
+          },
+          bossBattle: {
+            ...DEFAULT_GAME_CONFIG.bossBattle,
+            ...(serverConfig.bossBattle || {}),
+          },
+        };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(GAME_STORAGE_KEYS.CONFIG, JSON.stringify(merged));
+        }
+        return merged;
+      }
+    } catch {}
+    return this.getConfig();
   }
 
   public static getTopCustomers(): CustomerLeaderboardEntry[] {

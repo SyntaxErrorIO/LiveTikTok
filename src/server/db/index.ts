@@ -8,3 +8,4 @@ export * from './countersRepo';
 export * from './leaderboardRepo';
 export * from './logsRepo';
 export * from './backupsRepo';
+export * from './gamesRepo';

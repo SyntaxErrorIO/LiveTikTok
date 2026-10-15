@@ -13,7 +13,9 @@ export type EventBusMessage =
   | { type: 'TRIGGER_OVERLAY'; payload: TriggerActionPayload }
   | { type: 'TIKTOK_EVENT_RECEIVED'; payload: TikTokEvent }
   | { type: 'EXECUTION_LOGGED'; payload: ExecutionLog }
-  | { type: 'MASTER_SWITCH_CHANGED'; payload: boolean };
+  | { type: 'MASTER_SWITCH_CHANGED'; payload: boolean }
+  | { type: 'GAME_CONFIG_UPDATED'; payload: any }
+  | { type: 'GAME_ACTION_RECEIVED'; payload: any };
 
 type ListenerCallback = (message: EventBusMessage) => void;
 

@@ -7,6 +7,7 @@ import { LeaderboardEntry, StreamCounter } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { apiService } from '../../services/apiService';
 import { FoodRushGame } from '../games/foodRush/FoodRushGame';
+import { BossBattleGame } from '../games/bossBattle/BossBattleGame';
 import { GameStorageService } from '../../services/gameStorageService';
 
 interface ActiveOverlay {
@@ -126,6 +127,16 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
           setTopDonors([]);
         }
       } catch {}
+
+      // 3. Sincronizar configuración del juego interactivo desde el servidor backend para OBS CEF
+      try {
+        const gameCfg = await GameStorageService.syncFromServer(overlayToken || undefined);
+        if (gameCfg && gameCfg.activeGameId) {
+          setActiveGameId(gameCfg.activeGameId);
+          if (gameCfg.aspectRatio) setGameAspect(gameCfg.aspectRatio);
+          if (gameCfg.sceneTheme) setGameTheme(gameCfg.sceneTheme);
+        }
+      } catch {}
     };
 
     fetchServerState();
@@ -144,6 +155,10 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
         }
       } else if (msg.type === 'LEADERBOARD_UPDATED' && Array.isArray(msg.payload)) {
         setTopDonors(msg.payload.slice(0, 5));
+      } else if (msg.type === 'GAME_CONFIG_UPDATED' && msg.config) {
+        setActiveGameId(msg.config.activeGameId);
+        if (msg.config.aspectRatio) setGameAspect(msg.config.aspectRatio);
+        if (msg.config.sceneTheme) setGameTheme(msg.config.sceneTheme);
       }
     });
 
@@ -242,6 +257,10 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
               }
             } else if (data.type === 'LEADERBOARD_UPDATED' && Array.isArray(data.payload)) {
               setTopDonors(data.payload.slice(0, 5));
+            } else if (data.type === 'GAME_CONFIG_UPDATED' && data.config) {
+              setActiveGameId(data.config.activeGameId);
+              if (data.config.aspectRatio) setGameAspect(data.config.aspectRatio);
+              if (data.config.sceneTheme) setGameTheme(data.config.sceneTheme);
             }
           } catch {}
         };
@@ -366,7 +385,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       }`}
     >
       {/* 4b. METAS DE REGALOS: Barra de progreso configurable */}
-      {showGoal && activeGameId !== 'street_food_rush' && (
+      {showGoal && activeGameId !== 'street_food_rush' && activeGameId !== 'boss_battle' && (
         <div className="absolute top-4 left-6 z-40 max-w-[320px] w-full">
           <div className="p-3 rounded-xl bg-slate-950/85 border border-cyan-500/40 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between text-xs mb-1.5">
@@ -405,7 +424,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       )}
 
       {/* 4c. TOP DONADORES: Ranking persistente de los 5 mayores donantes */}
-      {showTopDonors && activeGameId !== 'street_food_rush' && (
+      {showTopDonors && activeGameId !== 'street_food_rush' && activeGameId !== 'boss_battle' && (
         <div className="absolute bottom-6 left-6 z-40 max-w-[280px] w-full">
           <div className="p-3.5 rounded-xl bg-slate-950/85 border border-amber-500/30 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80 mb-2">
@@ -469,6 +488,22 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
             isPreview={isPreview}
             aspectRatio={gameAspect}
             sceneTheme={gameTheme}
+          />
+        </div>
+      )}
+
+      {/* Segundo Minijuego Jugable: Batalla de Jefe Colosal (Boss Battle) */}
+      {activeGameId === 'boss_battle' && (
+        <div
+          className={`z-20 pointer-events-auto ${
+            gameAspect === '9:16'
+              ? 'absolute inset-0 flex items-center justify-center p-2 sm:p-4'
+              : 'absolute inset-x-4 top-16 bottom-6 flex items-center justify-center'
+          }`}
+        >
+          <BossBattleGame
+            isPreview={isPreview}
+            aspectRatio={gameAspect}
           />
         </div>
       )}
