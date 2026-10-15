@@ -7,17 +7,32 @@ import { SystemLogger } from '../systemLogger';
 
 export class ConnectorManager {
   private activeConnectors: Map<string, ITikTokConnector> = new Map();
-  private connectingUsers: Set<string> = new Set();
+  private connectingGenerations: Map<string, Set<number>> = new Map();
   private connectionGenerations: Map<string, number> = new Map();
-  private unsubscribers: Map<string, (() => void)[]> = new Map();
+  private attemptUnsubs: Map<string, Map<number, (() => void)[]>> = new Map();
 
-  private cleanupListeners(targetUserId: string) {
-    const unsubs = this.unsubscribers.get(targetUserId);
-    if (unsubs) {
-      unsubs.forEach((unsub) => {
-        try { unsub(); } catch {}
+  private cleanupAttemptListeners(targetUserId: string, gen: number) {
+    const userMap = this.attemptUnsubs.get(targetUserId);
+    if (userMap) {
+      const unsubs = userMap.get(gen);
+      if (unsubs) {
+        unsubs.forEach((unsub) => {
+          try { unsub(); } catch {}
+        });
+        userMap.delete(gen);
+      }
+    }
+  }
+
+  private cleanupAllListeners(targetUserId: string) {
+    const userMap = this.attemptUnsubs.get(targetUserId);
+    if (userMap) {
+      userMap.forEach((unsubs) => {
+        unsubs.forEach((unsub) => {
+          try { unsub(); } catch {}
+        });
       });
-      this.unsubscribers.delete(targetUserId);
+      this.attemptUnsubs.delete(targetUserId);
     }
   }
 
@@ -28,23 +43,21 @@ export class ConnectorManager {
   ): Promise<boolean> {
     const targetUserId = userId || 'default';
 
-    if (this.connectingUsers.has(targetUserId)) {
-      SystemLogger.info('ENGINE', `Intento de conexión concurrente bloqueado para el usuario ${targetUserId}.`);
-      return false;
-    }
-
     const currentGen = (this.connectionGenerations.get(targetUserId) || 0) + 1;
     this.connectionGenerations.set(targetUserId, currentGen);
 
-    this.connectingUsers.add(targetUserId);
+    let connectingSet = this.connectingGenerations.get(targetUserId);
+    if (!connectingSet) {
+      connectingSet = new Set();
+      this.connectingGenerations.set(targetUserId, connectingSet);
+    }
+    connectingSet.add(currentGen);
+
     try {
       const conn = StateStore.getConnection(userId);
       conn.desiredConnected = true;
       conn.status = 'connecting';
       StateStore.saveConnection(conn, userId);
-
-      // Clean up old listeners
-      this.cleanupListeners(targetUserId);
 
       // Always obtain a clean connector instance matching current mode & connectorType
       const existing = this.activeConnectors.get(targetUserId);
@@ -103,22 +116,32 @@ export class ConnectorManager {
         );
       });
       unsubs.push(unsubStatus);
-      this.unsubscribers.set(targetUserId, unsubs);
 
-      const success = await connector.connect(conn);
+      let userUnsubMap = this.attemptUnsubs.get(targetUserId);
+      if (!userUnsubMap) {
+        userUnsubMap = new Map();
+        this.attemptUnsubs.set(targetUserId, userUnsubMap);
+      }
+      userUnsubMap.set(currentGen, unsubs);
 
-      // Check if generation changed during async await (e.g., user clicked disconnect)
+      let success = false;
+      try {
+        success = await connector.connect(conn);
+      } catch (err: any) {
+        SystemLogger.error('ENGINE', `Excepción en conector para ${targetUserId}: ${err?.message || err}`);
+        success = false;
+      }
+
+      // Check if generation changed during async await (e.g., user clicked disconnect or started new connect)
       if (this.connectionGenerations.get(targetUserId) !== currentGen) {
-        // Obsolete connection attempt finished after user disconnected: ensure cleanup!
+        // Obsolete connection attempt finished after user disconnected or superseded: clean up ONLY this generation's unsubs
+        this.cleanupAttemptListeners(targetUserId, currentGen);
         try {
-          if (this.activeConnectors.get(targetUserId) === connector) {
+          if (this.activeConnectors.get(targetUserId) === connector && this.connectionGenerations.get(targetUserId) !== currentGen) {
             connector.disconnect();
             this.activeConnectors.delete(targetUserId);
-          } else {
-            connector.disconnect();
           }
         } catch {}
-        this.cleanupListeners(targetUserId);
         return false;
       }
 
@@ -145,7 +168,11 @@ export class ConnectorManager {
       }
       return success;
     } finally {
-      this.connectingUsers.delete(targetUserId);
+      const set = this.connectingGenerations.get(targetUserId);
+      if (set) {
+        set.delete(currentGen);
+        if (set.size === 0) this.connectingGenerations.delete(targetUserId);
+      }
     }
   }
 
@@ -154,8 +181,10 @@ export class ConnectorManager {
 
     const gen = (this.connectionGenerations.get(targetUserId) || 0) + 1;
     this.connectionGenerations.set(targetUserId, gen);
-    this.connectingUsers.delete(targetUserId);
-    this.cleanupListeners(targetUserId);
+    const set = this.connectingGenerations.get(targetUserId);
+    if (set) set.clear();
+
+    this.cleanupAllListeners(targetUserId);
 
     const connector = this.activeConnectors.get(targetUserId);
     if (connector) {
@@ -190,7 +219,7 @@ export class ConnectorManager {
     conn.status = 'disconnected';
     conn.errorMessage = reason;
     conn.lastActivityAt = Date.now();
-    // Preserve conn.desiredConnected because provider disconnect is network failure, not manual user disconnect
+    // Preserve desiredConnected because provider disconnect is network failure, not manual user disconnect
     StateStore.saveConnection(conn, userId);
 
     FailSafeManager.activate(reason, 'tiktok_disconnect', true, userId);
