@@ -13,6 +13,8 @@ import { RealisticChefStation } from './RealisticChefStation';
 import { FoodMenuBoard } from './FoodMenuBoard';
 import { FullScreenOrderShowcase } from './FullScreenOrderShowcase';
 import { foodAudio } from './foodAudio';
+import { CustomerAvatar } from './CustomerAvatar';
+import { ServingDishToss } from './ServingDishToss';
 import { GameStorageService } from '../../../services/gameStorageService';
 import { eventBus } from '../../../services/eventBus';
 import { apiService } from '../../../services/apiService';
@@ -368,12 +370,34 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           foodAudio.playChime();
         }
 
-        // Enqueue order ensuring maxQueueLength safety
+        // Enqueue order with Combo Stacking: If same username sends same dish within 4 seconds, stack combo!
         setOrderQueue((prev) => {
-          if (prev.length >= config.foodRush.maxQueueLength) {
-            return [...prev.slice(1), newOrder];
+          const now = Date.now();
+          const lastIdx = prev.findIndex(
+            (o) =>
+              o.username.toLowerCase() === newOrder.username.toLowerCase() &&
+              o.dishName === newOrder.dishName &&
+              o.status === 'queued' &&
+              now - o.createdAt < 4000
+          );
+
+          if (lastIdx >= 0) {
+            const existing = { ...prev[lastIdx] };
+            const currentCombo = existing.comboCount || 1;
+            existing.comboCount = currentCombo + 1;
+            existing.diamonds += newOrder.diamonds;
+            existing.pointsEarned += newOrder.pointsEarned;
+            existing.cookDurationMs = Math.min(16000, existing.cookDurationMs + 2000); // Ligeramente más tiempo de cocción por combo acumulado
+
+            const updatedQueue = [...prev];
+            updatedQueue[lastIdx] = existing;
+            return updatedQueue;
           }
-          return [...prev, newOrder];
+
+          if (prev.length >= config.foodRush.maxQueueLength) {
+            return [...prev.slice(1), { ...newOrder, comboCount: 1 }];
+          }
+          return [...prev, { ...newOrder, comboCount: 1 }];
         });
 
         // Notificación flotante de que la orden está en preparación
@@ -896,19 +920,13 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
               }`}
             >
               {/* Customer Avatar */}
-              <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-white/80 bg-slate-800 shrink-0">
-                {currentOrder.avatarUrl ? (
-                  <img src={currentOrder.avatarUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white">
-                    {currentOrder.username[0]?.toUpperCase()}
-                  </div>
-                )}
-                {/* VIP Crown badge */}
-                {currentOrder.isVip && (
-                  <span className="absolute -top-1 -right-1 text-xs">👑</span>
-                )}
-              </div>
+              <CustomerAvatar
+                avatarUrl={currentOrder.avatarUrl}
+                username={currentOrder.username}
+                size="sm"
+                isVip={currentOrder.isVip}
+                className="border-2 border-white/80"
+              />
 
               {/* Customer Name & Order Info */}
               <div className="flex flex-col pr-1 min-w-[70px] max-w-[100px]">
@@ -949,18 +967,12 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
                 </span>
 
                 {/* Avatar */}
-                <div className="relative w-8 h-8 rounded-full overflow-hidden border border-slate-600 bg-slate-800 shrink-0">
-                  {order.avatarUrl ? (
-                    <img src={order.avatarUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-300">
-                      {order.username[0]?.toUpperCase()}
-                    </div>
-                  )}
-                  {order.isVip && (
-                    <span className="absolute -top-1 -right-1 text-[10px]">👑</span>
-                  )}
-                </div>
+                <CustomerAvatar
+                  avatarUrl={order.avatarUrl}
+                  username={order.username}
+                  size="xs"
+                  isVip={order.isVip}
+                />
 
                 {/* Info */}
                 <div className="flex flex-col pr-1 min-w-[60px] max-w-[90px]">

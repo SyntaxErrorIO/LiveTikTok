@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FoodOrder } from '../types';
 import { foodAudio } from './foodAudio';
+import { KitchenParticleCanvas } from './KitchenParticleCanvas';
 
 export interface RealisticChefStationProps {
   isCooking: boolean;
@@ -134,6 +135,18 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
             }`}
           />
         )}
+      </div>
+
+      {/* Sistema de Partículas Liviano Acelerado por GPU para Vapor, Chispas y Llamas */}
+      <div className="absolute inset-x-0 bottom-24 flex justify-center pointer-events-none z-30">
+        <KitchenParticleCanvas
+          isCooking={isCooking}
+          isVipFlame={isVipFlame}
+          isRushHour={isRushHour}
+          isFireEmergency={isFireEmergency}
+          isServing={isServing}
+          className="w-72 h-44"
+        />
       </div>
 
       {/* ============================================================== */}

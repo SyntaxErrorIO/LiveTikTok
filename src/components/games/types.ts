@@ -77,6 +77,7 @@ export interface FoodOrder {
   diamonds: number;
   giftName: string;
   repeatCount: number;
+  comboCount?: number;
   status: 'queued' | 'cooking' | 'serving' | 'completed';
   cookDurationMs: number;
   cookProgress: number; // 0 to 100
