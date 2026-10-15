@@ -116,6 +116,25 @@ export const DeploymentModal: React.FC<DeploymentModalProps> = ({
                     <span>{copiedKey === 'obs-url' ? 'Copiado' : 'Copiar'}</span>
                   </button>
                 </div>
+
+                <span className="text-xs font-bold text-amber-300 block pt-2 border-t border-slate-800">
+                  Formato Vertical 9:16 para TikTok Live Studio / OBS Vertical (Juegos Live)
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${obsUrl}&game=street_food_rush&aspect=9_16`}
+                    className="w-full px-3 py-2 bg-slate-950 border border-amber-700/60 rounded-lg text-amber-300 font-mono text-[11px] select-all"
+                  />
+                  <button
+                    onClick={() => copyText('obs-game-url', `${obsUrl}&game=street_food_rush&aspect=9_16`)}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 rounded-lg font-semibold"
+                  >
+                    {copiedKey === 'obs-game-url' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedKey === 'obs-game-url' ? 'Copiado' : 'Copiar 9:16'}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">

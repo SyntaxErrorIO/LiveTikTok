@@ -8,6 +8,7 @@ import { Navbar } from './components/layout/Navbar';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ConnectionsView } from './components/connections/ConnectionsView';
 import { AutomationsView } from './components/automations/AutomationsView';
+import { GamesView } from './components/games/GamesView';
 import { EffectsView } from './components/effects/EffectsView';
 import { SimulatorView } from './components/simulator/SimulatorView';
 import { HistoryView } from './components/history/HistoryView';
@@ -353,6 +354,12 @@ export default function App() {
             onFireQuickTest={handleFireQuickDemo}
             onToggleMaster={handleToggleMaster}
             onResetCounter={handleResetCounter}
+          />
+        )}
+
+        {currentTab === 'games' && (
+          <GamesView
+            onOpenObsModal={() => setIsObsModalOpen(true)}
           />
         )}
 

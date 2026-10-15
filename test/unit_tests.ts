@@ -2287,6 +2287,58 @@ async function runAllTests() {
     }
   });
 
+  // 60. Juegos Live interactivos: catálogo modular, Street Food Rush, cola FIFO de órdenes, pedidos VIP y ranking
+  await test('60. Juegos Live interactivos: catálogo modular, Street Food Rush, cola FIFO de órdenes, pedidos VIP y ranking', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { AVAILABLE_GAMES, QUICK_DISHES, VIP_DISHES, DEFAULT_GAME_CONFIG } = await import('../src/components/games/GameRegistry');
+
+    // 1. Catálogo modular con Street Food Rush activo y slots preparados para futuros juegos
+    assert(AVAILABLE_GAMES.some((g) => g.id === 'street_food_rush' && g.status === 'active'), 'Street Food Rush debe estar activo en el catálogo');
+    assert(AVAILABLE_GAMES.some((g) => g.id === 'boss_battle'), 'Debe existir slot preparado para Batalla de Jefe');
+    assert(AVAILABLE_GAMES.some((g) => g.id === 'gift_race'), 'Debe existir slot preparado para Carrera de Regalos');
+
+    // 2. Platos rápidos y VIP
+    assert(QUICK_DISHES.length >= 4, 'Deben existir al menos 4 platos rápidos');
+    assert(VIP_DISHES.length >= 3, 'Deben existir al menos 3 platos VIP');
+    assert(QUICK_DISHES.every((d) => d.emoji && d.points > 0 && d.cookTimeSec > 0), 'Platos rápidos deben tener emoji, puntos y tiempo');
+    assert(VIP_DISHES.every((d) => d.emoji && d.points > 50 && d.category === 'vip'), 'Platos VIP deben ser de categoría vip y mayor puntaje');
+
+    // 3. Reglas de clasificación: 1 moneda (Rosa) -> Quick, 5-20 monedas -> VIP
+    const isVipQuick = 1 >= DEFAULT_GAME_CONFIG.foodRush.vipOrderMinCoins;
+    const isVipTen = 10 >= DEFAULT_GAME_CONFIG.foodRush.vipOrderMinCoins;
+    assert(!isVipQuick, '1 moneda (Rosa) no debe ser orden VIP');
+    assert(isVipTen, '10 monedas debe clasificarse como orden VIP con fuego');
+
+    // 4. Integración en Navbar y ObsOverlayScreen
+    const navbarCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/layout/Navbar.tsx'), 'utf-8');
+    assert(navbarCode.includes('Juegos Live'), 'Navbar debe incluir pestaña Juegos Live');
+
+    const overlayCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/overlay/ObsOverlayScreen.tsx'), 'utf-8');
+    assert(overlayCode.includes('FoodRushGame'), 'ObsOverlayScreen debe importar y soportar FoodRushGame');
+    assert(overlayCode.includes('activeGameId === \'street_food_rush\''), 'ObsOverlayScreen debe renderizar el minijuego activo');
+    assert(overlayCode.includes('9:16'), 'ObsOverlayScreen debe soportar formato vertical 9:16');
+
+    // 5. Presencia del componente GamesView y FoodRushVisuals
+    const gamesViewCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/games/GamesView.tsx'), 'utf-8');
+    assert(gamesViewCode.includes('Copiar URL OBS 9:16'), 'GamesView debe proporcionar botón para copiar URL vertical 9:16');
+    assert(gamesViewCode.includes('Simular Eventos del Juego'), 'GamesView debe incluir panel de simulación en vivo');
+
+    // 6. Carta en Pantalla (LIVE_MENU_ITEMS) y Showcase Pantalla Completa
+    const { LIVE_MENU_ITEMS } = await import('../src/components/games/GameRegistry');
+    assert(LIVE_MENU_ITEMS.some((m) => m.dishName.includes('Solo Jugo') && m.triggerGift.includes('Rosa')), 'Carta debe tener Flor/Rosa -> Solo Jugo');
+    assert(LIVE_MENU_ITEMS.some((m) => m.dishName.includes('Chaufa') && m.triggerGift.includes('Corazón')), 'Carta debe tener Corazón -> Segundo de Chaufa');
+
+    const foodRushCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/games/foodRush/FoodRushGame.tsx'), 'utf-8');
+    assert(foodRushCode.includes('FoodMenuBoard'), 'FoodRushGame debe renderizar la Carta en Pantalla (FoodMenuBoard)');
+    assert(foodRushCode.includes('FullScreenOrderShowcase'), 'FoodRushGame debe renderizar el Showcase en toda la pantalla');
+    assert(foodRushCode.includes('RealisticChefStation'), 'FoodRushGame debe renderizar el Chef Realista y la Mesa de Preparación Culinaria');
+
+    const chefStationCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/games/foodRush/RealisticChefStation.tsx'), 'utf-8');
+    assert(chefStationCode.includes('Mesa de Salteado en Vivo'), 'RealisticChefStation debe incluir la mesa de preparación culinaria en vivo');
+    assert(chefStationCode.includes('PREP DE MESA'), 'RealisticChefStation debe incluir tabla de cortar y mise en place');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

@@ -36,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'games', label: 'Juegos Live' },
     { id: 'automations', label: 'Automatizaciones' },
     { id: 'effects', label: 'Efectos & OBS' },
     { id: 'simulator', label: 'Simulador' },

@@ -6,6 +6,8 @@ import { Sparkles, Zap, Crown, Flame, Heart, Radio, Target, Trophy, Award } from
 import { LeaderboardEntry, StreamCounter } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { apiService } from '../../services/apiService';
+import { FoodRushGame } from '../games/foodRush/FoodRushGame';
+import { GameStorageService } from '../../services/gameStorageService';
 
 interface ActiveOverlay {
   id: string;
@@ -31,6 +33,51 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
   // 4c: Top Donadores (Persistent top 5 ranking)
   const [topDonors, setTopDonors] = useState<LeaderboardEntry[]>([]);
   const [showTopDonors, setShowTopDonors] = useState(true);
+
+  // 4d: Live Minigame state (Street Food Rush, etc.)
+  const [activeGameId, setActiveGameId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const paramGame = params.get('game');
+      if (paramGame) return paramGame;
+    }
+    return GameStorageService.getConfig().activeGameId;
+  });
+
+  const [gameAspect, setGameAspect] = useState<'9:16' | 'responsive'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const paramAspect = params.get('aspect');
+      if (paramAspect === 'responsive' || paramAspect === 'fill') return 'responsive';
+      if (paramAspect === '9:16' || paramAspect === '9_16') return '9:16';
+    }
+    return GameStorageService.getConfig().aspectRatio || '9:16';
+  });
+
+  const [gameTheme, setGameTheme] = useState<'stall' | 'transparent'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const paramTheme = params.get('theme') || params.get('bg');
+      if (paramTheme === 'transparent') return 'transparent';
+      if (paramTheme === 'stall' || paramTheme === 'market') return 'stall';
+    }
+    return GameStorageService.getConfig().sceneTheme || 'stall';
+  });
+
+  // Listen to broadcast updates for active game
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const bc = new BroadcastChannel('livetrigger_games_channel');
+      bc.onmessage = (evt) => {
+        if (evt.data?.type === 'CONFIG_UPDATED' && evt.data.config) {
+          setActiveGameId(evt.data.config.activeGameId);
+          if (evt.data.config.aspectRatio) setGameAspect(evt.data.config.aspectRatio);
+        }
+      };
+      return () => bc.close();
+    } catch {}
+  }, []);
 
   // Initialize data from server (via overlayToken) or local fallback
   useEffect(() => {
@@ -319,7 +366,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       }`}
     >
       {/* 4b. METAS DE REGALOS: Barra de progreso configurable */}
-      {showGoal && (
+      {showGoal && activeGameId !== 'street_food_rush' && (
         <div className="absolute top-4 left-6 z-40 max-w-[320px] w-full">
           <div className="p-3 rounded-xl bg-slate-950/85 border border-cyan-500/40 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between text-xs mb-1.5">
@@ -358,7 +405,7 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
       )}
 
       {/* 4c. TOP DONADORES: Ranking persistente de los 5 mayores donantes */}
-      {showTopDonors && (
+      {showTopDonors && activeGameId !== 'street_food_rush' && (
         <div className="absolute bottom-6 left-6 z-40 max-w-[280px] w-full">
           <div className="p-3.5 rounded-xl bg-slate-950/85 border border-amber-500/30 shadow-xl backdrop-blur-md">
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80 mb-2">
@@ -406,6 +453,23 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 4d. JUEGO INTERACTIVO TIKTOK LIVE (Formato vertical 9:16 o adaptable) */}
+      {activeGameId === 'street_food_rush' && (
+        <div
+          className={`z-20 pointer-events-auto ${
+            gameAspect === '9:16'
+              ? 'absolute inset-0 flex items-center justify-center p-2 sm:p-4'
+              : 'absolute inset-x-4 top-16 bottom-6 flex items-center justify-center'
+          }`}
+        >
+          <FoodRushGame
+            isPreview={isPreview}
+            aspectRatio={gameAspect}
+            sceneTheme={gameTheme}
+          />
         </div>
       )}
 
