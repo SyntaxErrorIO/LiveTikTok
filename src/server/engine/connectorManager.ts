@@ -46,6 +46,19 @@ export class ConnectorManager {
     const currentGen = (this.connectionGenerations.get(targetUserId) || 0) + 1;
     this.connectionGenerations.set(targetUserId, currentGen);
 
+    // Proactively clean up any stale attempt listeners from older generations
+    const existingUserUnsubMap = this.attemptUnsubs.get(targetUserId);
+    if (existingUserUnsubMap) {
+      for (const [gen, unsubs] of existingUserUnsubMap.entries()) {
+        if (gen < currentGen) {
+          unsubs.forEach((unsub) => {
+            try { unsub(); } catch {}
+          });
+          existingUserUnsubMap.delete(gen);
+        }
+      }
+    }
+
     let connectingSet = this.connectingGenerations.get(targetUserId);
     if (!connectingSet) {
       connectingSet = new Set();

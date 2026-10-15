@@ -2535,12 +2535,13 @@ async function runAllTests() {
     const [r1, r2] = await Promise.all([connPromise1, connPromise2]);
     assert(r2 === true, 'Prueba B/C: La nueva conexión se establece correctamente sin interferencia de la antigua');
 
-    // Prueba D: Two simultaneous connection requests from the same user are handled safely
+    // Prueba D: Two simultaneous connection requests from the same user are handled safely and result in valid active connector
     const managerD = new ConnectorManager();
     const pD1 = managerD.connect('user_d', () => {}, () => {});
     const pD2 = managerD.connect('user_d', () => {}, () => {});
-    await Promise.all([pD1, pD2]);
-    assert(true, 'Prueba D: Solicitudes simultáneas del mismo usuario manejadas sin excepciones');
+    const [resD1, resD2] = await Promise.all([pD1, pD2]);
+    assert(typeof resD1 === 'boolean' && typeof resD2 === 'boolean', 'Prueba D: Solicitudes simultáneas retornan booleanos válidos');
+    assert(managerD.getActiveConnector('user_d') !== null, 'Prueba D: Queda un conector activo válido tras peticiones simultáneas');
 
     // Prueba E: Two different users connect simultaneously without interference
     const managerE = new ConnectorManager();
@@ -2548,6 +2549,7 @@ async function runAllTests() {
     const connectE2 = managerE.connect('user_e2', () => {}, () => {});
     const [resE1, resE2] = await Promise.all([connectE1, connectE2]);
     assert(resE1 && resE2, 'Prueba E: Dos usuarios diferentes pueden conectarse simultáneamente');
+    assert(managerE.getActiveConnector('user_e1') !== null && managerE.getActiveConnector('user_e2') !== null, 'Prueba E: Ambos conectores de usuario están activos e independientes');
 
     // Prueba F & L: User A loses connection while User B stays connected (Fail-Safe isolated)
     FailSafeManager.activate('Pérdida A', 'tiktok_disconnect', true, 'user_a_f');
@@ -2578,10 +2580,12 @@ async function runAllTests() {
     const connH = StateStore.getConnection('user_temp_h');
     assert(connH.desiredConnected === true, 'Prueba H: Intención preservada para reconexión');
 
-    // Prueba I: Failure during connector.connect does not leave connectingUsers locked
+    // Prueba I: Failure or completion during connector.connect releases lock and allows successful subsequent connect
     const managerI = new ConnectorManager();
-    await managerI.connect('user_i', () => {}, () => {});
-    assert(true, 'Prueba I: Bloqueo liberado correctamente tras intento');
+    const initialConnect = await managerI.connect('user_i', () => {}, () => {});
+    assert(initialConnect === true, 'Prueba I: Primer intento de conexión exitoso');
+    const subsequentConnect = await managerI.connect('user_i', () => {}, () => {});
+    assert(subsequentConnect === true, 'Prueba I: Segundo intento posterior desbloqueado y exitoso');
 
     // Prueba J: Events from one account never reach SSE subscribers of another
     let receivedJ1 = false;
@@ -2591,13 +2595,16 @@ async function runAllTests() {
     coreEngine.broadcast({ type: 'MASTER_SWITCH', payload: { test: true }, timestamp: Date.now() }, 'user_j1');
     assert(receivedJ1 && !receivedJ2, 'Prueba J: Eventos SSE aislados estrictamente entre cuentas');
 
-    // Prueba K: Multiple connection/disconnection cycles do not accumulate listeners
+    // Prueba K: Multiple connection/disconnection cycles do not accumulate listeners or leak active connectors
     const managerK = new ConnectorManager();
     for (let i = 0; i < 5; i++) {
       await managerK.connect('user_k', () => {}, () => {});
       managerK.disconnect('user_k', () => {});
     }
-    assert(true, 'Prueba K: Múltiples ciclos ejecutados sin acumulación de listeners ni fugas de memoria');
+    assert(managerK.getActiveConnector('user_k') === null, 'Prueba K: Ningún conector activo tras ciclos de desconexión');
+    const unsubsMap = (managerK as any).attemptUnsubs.get('user_k');
+    const activeUnsubsCount = unsubsMap ? unsubsMap.size : 0;
+    assert(activeUnsubsCount === 0, 'Prueba K: Cero listeners residuales almacenados tras ciclos de desconexión');
   });
 
   console.log('\n======================================================');
