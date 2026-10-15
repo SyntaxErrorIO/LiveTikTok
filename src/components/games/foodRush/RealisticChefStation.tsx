@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FoodOrder } from '../types';
 import { foodAudio } from './foodAudio';
 import { KitchenParticleCanvas } from './KitchenParticleCanvas';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 export interface RealisticChefStationProps {
   isCooking: boolean;
@@ -749,15 +750,12 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
                   {/* Ticket comanda con avatar del espectador */}
                   <div className="w-full p-2 rounded-xl bg-slate-950/90 border border-amber-500/50 backdrop-blur-md shadow-xl flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-7 h-7 rounded-full overflow-hidden border border-amber-400 shrink-0 bg-slate-800">
-                        {currentDish.avatarUrl ? (
-                          <img src={currentDish.avatarUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-amber-300">
-                            {currentDish.username[0]?.toUpperCase()}
-                          </div>
-                        )}
-                      </div>
+                      <CustomerAvatar
+                        avatarUrl={currentDish.avatarUrl}
+                        username={currentDish.username}
+                        size="sm"
+                        isVip={currentDish.isVip}
+                      />
 
                       <div className="flex flex-col min-w-0">
                         <span className="text-[11px] font-extrabold text-white truncate">

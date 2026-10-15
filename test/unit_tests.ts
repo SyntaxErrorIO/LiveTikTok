@@ -2356,6 +2356,20 @@ async function runAllTests() {
     assert(foodRushCode.includes('isFireEmergency'), 'FoodRushGame debe incluir lógica de sabotaje de fuego');
   });
 
+  // 61. GameRegistry y GamesRepository: carga sin errores de food_rush y boss_battle y persistencia con gamesRepo
+  await test('61. GameRegistry y GamesRepository: carga sin errores de food_rush y boss_battle y persistencia con gamesRepo', async () => {
+    const { AVAILABLE_GAMES } = await import('../src/components/games/GameRegistry');
+    assert(AVAILABLE_GAMES.some((g) => g.id === 'street_food_rush'), 'GameRegistry debe incluir street_food_rush');
+    assert(AVAILABLE_GAMES.some((g) => g.id === 'boss_battle'), 'GameRegistry debe incluir boss_battle');
+
+    const { GamesRepository } = await import('../src/server/db/gamesRepo');
+    const testConfig = { foodRush: { vipOrderMinCoins: 10 }, bossBattle: { maxHp: 1000 } };
+    GamesRepository.saveGameConfig(testConfig, 'test_user_game');
+    const loaded = GamesRepository.getGameConfig('test_user_game');
+    assert(loaded !== null, 'GamesRepository debe retornar la configuración guardada');
+    assert(loaded.foodRush.vipOrderMinCoins === 10, 'El valor guardado debe coincidir');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TikTokEvent } from '../../../types';
 import { eventBus } from '../../../services/eventBus';
 import { apiService } from '../../../services/apiService';
-import { Swords, Shield, Heart, Zap, Trophy, Volume2, VolumeX, Sparkles, Skull, RotateCcw } from 'lucide-react';
+import { Swords, Shield, Heart, Zap, Trophy, Volume2, VolumeX, Sparkles, Skull, RotateCcw, Flame } from 'lucide-react';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface DamagePop {
   id: string;
@@ -11,6 +12,18 @@ interface DamagePop {
   damage: number;
   isCrit: boolean;
   username: string;
+  comboCount?: number;
+}
+
+interface Projectile {
+  id: string;
+  type: 'fireball' | 'lightning' | 'sword';
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+  username: string;
+  avatarUrl?: string;
 }
 
 interface HeroAttacker {
@@ -19,6 +32,7 @@ interface HeroAttacker {
   avatarUrl?: string;
   damage: number;
   attacksCount: number;
+  combo: number;
 }
 
 interface BossBattleGameProps {
@@ -35,16 +49,42 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
   const [bossState, setBossState] = useState<'idle' | 'hit' | 'enraged' | 'defeated'>('idle');
   const [shield, setShield] = useState(30);
   const [damagePops, setDamagePops] = useState<DamagePop[]>([]);
+  const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const [heroes, setHeroes] = useState<HeroAttacker[]>([]);
   const [soundMuted, setSoundMuted] = useState(false);
-  const [recentAttack, setRecentAttack] = useState<{ user: string; text: string; gift: string } | null>(null);
+  const [recentAttack, setRecentAttack] = useState<{ user: string; text: string; gift?: string; avatarUrl?: string } | null>(null);
+
+  // Stacking combos & cooldowns ref
+  const userComboRef = useRef<Map<string, { count: number; lastTime: number }>>(new Map());
+  const chatCooldownRef = useRef<Map<string, number>>(new Map());
+
   const isEnraged = bossHp < maxHp * 0.4 && bossHp > 0;
 
-  // Handle damage to boss
+  // Inflict damage to boss with combo stacking & OBS memory protection (max 25 active elements)
   const inflictDamage = useCallback(
-    (user: { id?: string; username: string; nickname?: string; avatarUrl?: string }, damageAmount: number, giftName: string, isCrit = false) => {
+    (
+      user: { id?: string; username: string; nickname?: string; avatarUrl?: string },
+      baseDamage: number,
+      giftName: string,
+      isCrit = false
+    ) => {
+      const usernameKey = user.username.toLowerCase();
+      const now = Date.now();
+      const userCombos = userComboRef.current;
+      const existingCombo = userCombos.get(usernameKey);
+
+      let combo = 1;
+      if (existingCombo && now - existingCombo.lastTime < 4000) {
+        combo = existingCombo.count + 1;
+      }
+      userCombos.set(usernameKey, { count: combo, lastTime: now });
+
+      const finalDamage = baseDamage * Math.min(combo, 10);
+      const effectiveCrit = isCrit || combo >= 3;
+
+      // Update boss HP
       setBossHp((prev) => {
-        const next = Math.max(0, prev - damageAmount);
+        const next = Math.max(0, prev - finalDamage);
         if (next === 0) {
           setBossState('defeated');
         } else {
@@ -56,29 +96,53 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
         return next;
       });
 
-      // Spawn damage floating number
+      // Spawn projectile
+      const projType: 'fireball' | 'lightning' | 'sword' =
+        finalDamage >= 300 ? 'lightning' : finalDamage >= 100 ? 'fireball' : 'sword';
+
+      const projId = 'proj-' + Math.random().toString(36).substring(2, 7);
+      const newProj: Projectile = {
+        id: projId,
+        type: projType,
+        startX: 15 + Math.random() * 70,
+        startY: 85,
+        targetX: 50,
+        targetY: 45,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+      };
+
+      setProjectiles((prev) => [...prev.slice(-20), newProj]);
+      setTimeout(() => {
+        setProjectiles((prev) => prev.filter((p) => p.id !== projId));
+      }, 900);
+
+      // Spawn floating damage text
       const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
       const newPop: DamagePop = {
         id: popId,
         x: 35 + Math.random() * 30,
-        y: 40 + Math.random() * 20,
-        damage: damageAmount,
-        isCrit,
+        y: 35 + Math.random() * 20,
+        damage: finalDamage,
+        isCrit: effectiveCrit,
         username: user.username,
+        comboCount: combo > 1 ? combo : undefined,
       };
-      setDamagePops((prev) => [...prev.slice(-8), newPop]);
+
+      setDamagePops((prev) => [...prev.slice(-20), newPop]);
       setTimeout(() => {
         setDamagePops((prev) => prev.filter((p) => p.id !== popId));
       }, 1400);
 
       // Record hero score
       setHeroes((prev) => {
-        const existingIdx = prev.findIndex((h) => h.username.toLowerCase() === user.username.toLowerCase());
+        const existingIdx = prev.findIndex((h) => h.username.toLowerCase() === usernameKey);
         let updated: HeroAttacker[];
         if (existingIdx >= 0) {
           const item = { ...prev[existingIdx] };
-          item.damage += damageAmount;
+          item.damage += finalDamage;
           item.attacksCount += 1;
+          item.combo = combo;
           if (user.avatarUrl) item.avatarUrl = user.avatarUrl;
           updated = [...prev];
           updated[existingIdx] = item;
@@ -89,8 +153,9 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
               username: user.username,
               nickname: user.nickname || user.username,
               avatarUrl: user.avatarUrl,
-              damage: damageAmount,
+              damage: finalDamage,
               attacksCount: 1,
+              combo,
             },
           ];
         }
@@ -100,8 +165,9 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
 
       setRecentAttack({
         user: user.nickname || user.username,
-        text: `-${damageAmount} HP ${isCrit ? '¡GOLPE CRÍTICO!' : ''}`,
+        text: `-${finalDamage} HP ${combo > 1 ? `(¡Combo x${combo}!)` : ''} ${effectiveCrit ? '¡CRÍTICO!' : ''}`,
         gift: giftName,
+        avatarUrl: user.avatarUrl,
       });
       setTimeout(() => setRecentAttack(null), 2500);
     },
@@ -136,6 +202,19 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
       } else if (event.type === 'like') {
         const count = Number(event.data.likeCount) || 1;
         setShield((prev) => Math.min(100, prev + count * 0.5));
+      } else if (event.type === 'comment') {
+        const text = (event.data.comment || '').toLowerCase().trim();
+        if (text.includes('!atacar') || text.includes('ataque') || text.includes('fuego')) {
+          const username = event.user.username;
+          const now = Date.now();
+          const lastAttackTime = chatCooldownRef.current.get(username) || 0;
+
+          // 10 seconds cooldown per user for free chat attack
+          if (now - lastAttackTime > 10000) {
+            chatCooldownRef.current.set(username, now);
+            inflictDamage(event.user, 5, 'Comando Chat (!atacar)', false);
+          }
+        }
       }
     },
     [inflictDamage]
@@ -147,7 +226,7 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
         handleIncomingEvent(msg.payload);
       } else if (msg.type === 'GAME_ACTION_RECEIVED' && msg.payload?.action === 'BOSS_ATTACK') {
         inflictDamage(
-          { username: 'heroe_live', nickname: 'Héroe del Chat' },
+          { username: msg.payload.username || 'heroe_live', nickname: msg.payload.nickname || 'Héroe del Chat', avatarUrl: msg.payload.avatarUrl },
           msg.payload.damage || 50,
           msg.payload.gift || 'Ataque Especial',
           msg.payload.isCrit
@@ -171,6 +250,8 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
     setBossHp(maxHp);
     setBossState('idle');
     setShield(30);
+    setDamagePops([]);
+    setProjectiles([]);
   };
 
   const hpPercent = (bossHp / maxHp) * 100;
@@ -195,6 +276,11 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
             className="absolute flex flex-col items-center animate-out fade-out slide-out-to-top duration-1000"
             style={{ left: `${pop.x}%`, top: `${pop.y}%` }}
           >
+            {pop.comboCount && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] shadow animate-bounce mb-0.5">
+                COMBO x{pop.comboCount}!
+              </span>
+            )}
             <span
               className={`font-black tracking-tight drop-shadow-[0_4px_8px_rgba(0,0,0,1)] ${
                 pop.isCrit
@@ -207,6 +293,25 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
             <span className="text-[10px] text-white/90 font-mono bg-black/60 px-1 rounded">
               @{pop.username}
             </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Animated Projectiles */}
+      <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+        {projectiles.map((proj) => (
+          <div
+            key={proj.id}
+            className="absolute transition-all duration-700 ease-out flex items-center justify-center"
+            style={{
+              left: `${proj.targetX}%`,
+              top: `${proj.targetY}%`,
+              transform: 'translate(-50%, -50%) scale(1.4)',
+            }}
+          >
+            {proj.type === 'lightning' && <span className="text-3xl animate-ping">⚡</span>}
+            {proj.type === 'fireball' && <span className="text-3xl animate-pulse">🔥</span>}
+            {proj.type === 'sword' && <span className="text-2xl animate-spin">⚔️</span>}
           </div>
         ))}
       </div>
@@ -282,8 +387,8 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
         {/* Aviso de ataque reciente */}
         {recentAttack && (
           <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 animate-in fade-in zoom-in duration-150">
-            <div className="px-3 py-1 rounded-full bg-black/80 border border-red-500/80 text-xs text-white shadow-xl flex items-center gap-1.5 backdrop-blur-md">
-              <Swords className="w-3.5 h-3.5 text-red-400" />
+            <div className="px-3 py-1.5 rounded-full bg-black/85 border border-red-500/80 text-xs text-white shadow-xl flex items-center gap-2 backdrop-blur-md">
+              <CustomerAvatar avatarUrl={recentAttack.avatarUrl} username={recentAttack.user} size="xs" />
               <span className="font-bold text-amber-300">@{recentAttack.user}:</span>
               <span className="font-bold text-white">{recentAttack.text}</span>
             </div>
@@ -379,27 +484,35 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
             <span>Top Héroes del Raid</span>
           </div>
           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+            <span>💬 Chat: !atacar</span>
+            <span>·</span>
             <span>🌹 Rosa: -15 HP</span>
             <span>·</span>
             <span className="text-amber-300 font-bold">👑 León: -600 HP</span>
           </div>
         </div>
 
-        {/* Mini lista de Top atacantes */}
+        {/* Mini lista de Top atacantes con CustomerAvatar */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none items-center min-h-[44px]">
           {heroes.length === 0 ? (
             <div className="w-full text-center text-slate-500 text-[11px] font-mono py-1">
-              ¡Envía un regalo para infligir el primer golpe!
+              ¡Envía un regalo o comenta "!atacar" para infligir el primer golpe!
             </div>
           ) : (
             heroes.map((hero, idx) => (
               <div
                 key={hero.username}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/80 border border-slate-700 shrink-0 text-xs"
+                className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-700 shrink-0 text-xs shadow"
               >
                 <span className="font-mono font-bold text-amber-400 text-[10px]">#{idx + 1}</span>
-                <span className="font-bold text-white truncate max-w-[70px]">@{hero.username}</span>
-                <span className="font-mono text-red-400 font-extrabold text-[10px]">
+                <CustomerAvatar avatarUrl={hero.avatarUrl} username={hero.username} size="xs" />
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-white truncate max-w-[70px]">@{hero.username}</span>
+                  {hero.combo > 1 && (
+                    <span className="text-[8px] font-black text-amber-400">x{hero.combo} Combo</span>
+                  )}
+                </div>
+                <span className="font-mono text-red-400 font-extrabold text-[10px] ml-1">
                   {hero.damage} dmg
                 </span>
               </div>

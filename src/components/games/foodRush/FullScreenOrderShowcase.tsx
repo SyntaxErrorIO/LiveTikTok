@@ -3,6 +3,7 @@ import { FoodOrder } from '../types';
 import { RealisticFoodItem } from './FoodRealisticVisuals';
 import { Sparkles, Flame, Trophy, X, ChefHat, CheckCircle2, Volume2 } from 'lucide-react';
 import { audioEngine } from '../../../services/audioEngine';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface FullScreenOrderShowcaseProps {
   order: FoodOrder | null;
@@ -135,18 +136,12 @@ export const FullScreenOrderShowcase: React.FC<FullScreenOrderShowcaseProps> = (
         <div className="p-3 rounded-2xl bg-gradient-to-r from-slate-900/90 via-slate-950/95 to-slate-900/90 border-2 border-amber-400/60 shadow-[0_8px_32px_rgba(0,0,0,0.8),0_0_20px_rgba(245,158,11,0.3)] backdrop-blur-xl flex items-center justify-between gap-3">
           {/* Avatar del espectador */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-amber-400 bg-slate-800 shadow-[0_0_12px_rgba(245,158,11,0.5)] shrink-0">
-              {order.avatarUrl ? (
-                <img src={order.avatarUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center font-black text-amber-300 text-lg bg-gradient-to-br from-amber-900 to-slate-950">
-                  {order.username[0]?.toUpperCase()}
-                </div>
-              )}
-              {order.isVip && (
-                <span className="absolute -top-1 -right-1 text-sm filter drop-shadow">👑</span>
-              )}
-            </div>
+            <CustomerAvatar
+              avatarUrl={order.avatarUrl}
+              username={order.username}
+              size="lg"
+              isVip={order.isVip}
+            />
 
             {/* Datos del usuario */}
             <div className="flex flex-col min-w-0">
