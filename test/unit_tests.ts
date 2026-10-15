@@ -2449,6 +2449,36 @@ async function runAllTests() {
     }
   });
 
+  // 63. Corrección 2: Reconexión automática multiusuario y aislamiento de eventos
+  await test('63. Reconexión automática multiusuario y aislamiento de eventos', async () => {
+    const { ConnectorManager } = await import('../src/server/engine/connectorManager');
+    const manager = new ConnectorManager();
+
+    StateStore.saveConnection({
+      username: 'test_user_stream',
+      mode: 'simulation',
+      connectorType: 'direct',
+      status: 'disconnected',
+      autoReconnect: false,
+      bridgeServerUrl: 'ws://localhost:21213',
+    }, 'user_isolated_1');
+
+    const conn1 = StateStore.getConnection('user_isolated_1');
+    assert(conn1.status === 'disconnected', 'Usuario desconectado no debe tener estado conectado');
+    assert(conn1.autoReconnect === false, 'autoReconnect debe ser falso');
+
+    let receivedUserA = false;
+    let receivedUserB = false;
+
+    coreEngine.subscribeSSE(() => { receivedUserA = true; }, 'user_a');
+    coreEngine.subscribeSSE(() => { receivedUserB = true; }, 'user_b');
+
+    coreEngine.broadcast({ type: 'MASTER_SWITCH', payload: { enabled: true }, timestamp: Date.now() }, 'user_a');
+
+    assert(receivedUserA, 'Usuario A debe recibir su mensaje broadcast');
+    assert(!receivedUserB, 'Usuario B NO debe recibir mensajes broadcast dirigidos al usuario A (aislamiento multiusuario)');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

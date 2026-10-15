@@ -3,9 +3,11 @@ import { TikTokConnectorFactory } from '../connectors/connectorFactory';
 import { StateStore } from '../stateStore';
 import { FailSafeManager } from '../failSafeManager';
 import { SSEBroadcastMessage } from '../coreEngine';
+import { SystemLogger } from '../systemLogger';
 
 export class ConnectorManager {
   private activeConnectors: Map<string, ITikTokConnector> = new Map();
+  private connectingUsers: Set<string> = new Set();
 
   public async connect(
     userId: string | undefined,
@@ -13,82 +15,93 @@ export class ConnectorManager {
     broadcast: (msg: SSEBroadcastMessage, userId?: string) => void
   ): Promise<boolean> {
     const targetUserId = userId || 'default';
-    const conn = StateStore.getConnection(userId);
 
-    // If existing connector has different mode or connectorType, tear down cleanly
-    const existing = this.activeConnectors.get(targetUserId);
-    if (existing && (existing.mode !== conn.mode || (conn.connectorType && existing.connectorType !== conn.connectorType))) {
-      existing.disconnect();
-      this.activeConnectors.delete(targetUserId);
+    if (this.connectingUsers.has(targetUserId)) {
+      SystemLogger.info('ENGINE', `Intento de conexión concurrente bloqueado para el usuario ${targetUserId}.`);
+      return false;
     }
 
-    let connector = this.activeConnectors.get(targetUserId);
-    if (!connector) {
-      connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
-      this.activeConnectors.set(targetUserId, connector);
+    this.connectingUsers.add(targetUserId);
+    try {
+      const conn = StateStore.getConnection(userId);
 
-      // Listen to raw events from connector
-      connector.onEvent((rawEvent) => {
-        onRawEvent(rawEvent, connector?.mode || 'simulation');
-      });
+      // If existing connector has different mode or connectorType, tear down cleanly
+      const existing = this.activeConnectors.get(targetUserId);
+      if (existing && (existing.mode !== conn.mode || (conn.connectorType && existing.connectorType !== conn.connectorType))) {
+        existing.disconnect();
+        this.activeConnectors.delete(targetUserId);
+      }
 
-      // Listen to status updates
-      connector.onStatusChange((statusEvent) => {
-        conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
-        conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
-        conn.errorMessage = statusEvent.errorMessage;
-        conn.notice = statusEvent.notice;
-        conn.warning = statusEvent.warning;
-        if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
-        if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
-        StateStore.saveConnection(conn, userId);
+      let connector = this.activeConnectors.get(targetUserId);
+      if (!connector) {
+        connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
+        this.activeConnectors.set(targetUserId, connector);
 
-        if (statusEvent.status === 'error') {
-          FailSafeManager.activate(statusEvent.errorMessage || 'Error crítico en el conector de TikTok');
+        // Listen to raw events from connector
+        connector.onEvent((rawEvent) => {
+          onRawEvent(rawEvent, connector?.mode || 'simulation');
+        });
+
+        // Listen to status updates
+        connector.onStatusChange((statusEvent) => {
+          conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
+          conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
+          conn.errorMessage = statusEvent.errorMessage;
+          conn.notice = statusEvent.notice;
+          conn.warning = statusEvent.warning;
+          if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
+          if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
+          StateStore.saveConnection(conn, userId);
+
+          if (statusEvent.status === 'error') {
+            FailSafeManager.activate(statusEvent.errorMessage || 'Error crítico en el conector de TikTok');
+            broadcast(
+              {
+                type: 'FAIL_SAFE_STATE',
+                payload: FailSafeManager.getStatus(),
+                timestamp: Date.now(),
+              },
+              userId
+            );
+          }
+
           broadcast(
             {
-              type: 'FAIL_SAFE_STATE',
-              payload: FailSafeManager.getStatus(),
+              type: 'CONNECTION_STATUS',
+              payload: conn,
               timestamp: Date.now(),
             },
             userId
           );
-        }
+        });
+      }
 
+      const success = await connector.connect(conn);
+      if (success) {
+        FailSafeManager.reset('Conexión establecida exitosamente');
         broadcast(
           {
-            type: 'CONNECTION_STATUS',
-            payload: conn,
+            type: 'FAIL_SAFE_STATE',
+            payload: FailSafeManager.getStatus(),
             timestamp: Date.now(),
           },
           userId
         );
-      });
+      } else {
+        FailSafeManager.activate('No fue posible negociar la conexión con el proveedor.');
+        broadcast(
+          {
+            type: 'FAIL_SAFE_STATE',
+            payload: FailSafeManager.getStatus(),
+            timestamp: Date.now(),
+          },
+          userId
+        );
+      }
+      return success;
+    } finally {
+      this.connectingUsers.delete(targetUserId);
     }
-
-    const success = await connector.connect(conn);
-    if (success) {
-      FailSafeManager.reset('Conexión establecida exitosamente');
-      broadcast(
-        {
-          type: 'FAIL_SAFE_STATE',
-          payload: FailSafeManager.getStatus(),
-          timestamp: Date.now(),
-        },
-        userId
-      );
-    } else {
-      FailSafeManager.activate('No fue posible negociar la conexión con el proveedor.');
-      broadcast(
-        {
-          type: 'FAIL_SAFE_STATE',
-          payload: FailSafeManager.getStatus(),
-          timestamp: Date.now(),
-        },
-        userId
-      );
-    }
-    return success;
   }
 
   public disconnect(userId?: string, broadcast?: (msg: SSEBroadcastMessage, userId?: string) => void) {

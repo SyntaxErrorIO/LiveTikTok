@@ -112,13 +112,32 @@ async function startServer() {
         `LiveTrigger AI iniciado en ${localUrl} (${isProd ? 'PRODUCCIÓN' : 'DESARROLLO'})`
       );
 
-      // Auto-Recovery on server boot: If previously connected, resume background monitoring
-      const conn = StateStore.getConnection();
-      if (conn.status === 'connected') {
-        SystemLogger.info('ENGINE', 'Recuperación automática tras reinicio: reconectando proveedor...', {
-          details: { mode: conn.mode, channel: conn.username },
-        });
-        coreEngine.connect().catch(() => {});
+      // Auto-Recovery on server boot: Iterate over all users and default scope
+      try {
+        const users = StateStore.getUsers();
+        const userIds = users.map(u => u.id).concat(['default']);
+        const processedUserIds = new Set<string>();
+
+        for (const uid of userIds) {
+          if (processedUserIds.has(uid)) continue;
+          processedUserIds.add(uid);
+
+          try {
+            const conn = StateStore.getConnection(uid);
+            if (conn.status === 'connected' && conn.autoReconnect !== false && conn.username && conn.username.trim().length > 0) {
+              SystemLogger.info('ENGINE', `Recuperación automática de conexión tras reinicio para ámbito ${uid}...`, {
+                details: { mode: conn.mode, channel: conn.username },
+              });
+              coreEngine.connect(uid).catch((err) => {
+                SystemLogger.error('ENGINE', `Fallo al recuperar conector en arranque para ${uid}: ${err?.message || err}`);
+              });
+            }
+          } catch (userErr: any) {
+            SystemLogger.error('ENGINE', `Error procesando recuperación para usuario ${uid}: ${userErr?.message || userErr}`);
+          }
+        }
+      } catch (recoveryErr: any) {
+        SystemLogger.error('ENGINE', `Error general en recuperación automática de conexiones: ${recoveryErr?.message || recoveryErr}`);
       }
     });
 
