@@ -73,9 +73,9 @@ router.get('/api/system/fail-safe', requireAuth, (_req: Request, res: Response) 
   return res.json({ success: true, failSafe: FailSafeManager.getStatus() });
 });
 
-// Reset Fail-Safe
-router.post('/api/system/fail-safe/reset', requireAuth, (req: Request, res: Response) => {
-  const reason = req.body?.reason || 'Restablecimiento manual por el usuario';
+// Reset Fail-Safe (Protected strictly by requireAdmin)
+router.post('/api/system/fail-safe/reset', requireAdmin, (req: Request, res: Response) => {
+  const reason = req.body?.reason || 'Restablecimiento manual por el administrador';
   const status = FailSafeManager.reset(reason);
   coreEngine.broadcast({
     type: 'FAIL_SAFE_STATE',

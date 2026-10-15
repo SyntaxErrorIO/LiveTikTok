@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { AuthManager } from '../authManager';
 import { AuthedRequest } from '../types';
 
@@ -55,10 +56,27 @@ export const extractUser = (req: Request, _res: Response, next: NextFunction) =>
 };
 
 /**
+ * Timing-safe string comparison helper
+ */
+function safeCompare(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    const dummy = Buffer.alloc(bufA.length);
+    try {
+      crypto.timingSafeEqual(bufA, dummy);
+    } catch {}
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
  * Mandatory CSRF Protection Middleware:
  * Protects state-changing requests (POST, PUT, DELETE, PATCH).
  * - Requests authenticated via explicit Authorization: Bearer are exempt (machine-to-machine, CLI, tests).
- * - Requests with x-webhook-secret are exempt.
+ * - Requests with valid x-webhook-secret are exempt.
  * - Browser requests relying on session cookies MUST provide a custom header (e.g. X-CSRF-Token or X-Requested-With).
  */
 export const csrfProtection = (req: Request, res: Response, next: NextFunction) => {
@@ -74,10 +92,15 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
-  // Webhooks verified by secret header
-  const webhookSecret = req.headers['x-webhook-secret'];
-  if (webhookSecret) {
-    return next();
+  // Webhooks verified by secret header with cryptographic timing-safe validation
+  const webhookSecretHeader = req.headers['x-webhook-secret'];
+  if (webhookSecretHeader) {
+    const expectedSecret = process.env.TIKTOK_WEBHOOK_SECRET?.trim();
+    const providedSecret = typeof webhookSecretHeader === 'string' ? webhookSecretHeader.trim() : '';
+
+    if (expectedSecret && providedSecret && safeCompare(expectedSecret, providedSecret)) {
+      return next();
+    }
   }
 
   // Check custom client-side header that cross-origin browser form submissions cannot forge without CORS preflight

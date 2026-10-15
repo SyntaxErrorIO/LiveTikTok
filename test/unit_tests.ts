@@ -2370,6 +2370,85 @@ async function runAllTests() {
     assert(loaded.foodRush.vipOrderMinCoins === 10, 'El valor guardado debe coincidir');
   });
 
+  // 62. Seguridad Backend: Autorización Fail-Safe y validación estricta de x-webhook-secret en CSRF
+  await test('62. Seguridad Backend: Autorización Fail-Safe y validación estricta de x-webhook-secret en CSRF', async () => {
+    const { requireAdmin, csrfProtection } = await import('../src/server/middleware/auth');
+
+    // 1. Fail-Safe Reset Auth Tests
+    let statusSet: number | null = null;
+    let nextCalled = false;
+    const unauthedReq: any = { user: undefined };
+    const resMock: any = {
+      status: (code: number) => {
+        statusSet = code;
+        return { json: (d: any) => d };
+      },
+      json: (d: any) => d,
+    };
+
+    requireAdmin(unauthedReq, resMock, () => { nextCalled = true; });
+    assert(!nextCalled, 'Usuario sin sesión no debe pasar requireAdmin');
+    assert(statusSet === 401, 'Usuario sin sesión debe recibir 401 Unauthorized');
+
+    // Streamer autenticado (role = 'streamer') intenta acceder a endpoint admin de fail-safe reset
+    statusSet = null;
+    nextCalled = false;
+    const streamerReq: any = { user: { userId: 's1', role: 'streamer' } };
+    requireAdmin(streamerReq, resMock, () => { nextCalled = true; });
+    assert(!nextCalled, 'Streamer no debe poder acceder a funciones de admin (fail-safe reset)');
+    assert(statusSet === 403, 'Streamer debe recibir 403 Forbidden');
+
+    // Administrador autenticado (role = 'admin') puede acceder
+    statusSet = null;
+    nextCalled = false;
+    const adminReq: any = { user: { userId: 'a1', role: 'admin' } };
+    requireAdmin(adminReq, resMock, () => { nextCalled = true; });
+    assert(nextCalled, 'Administrador sí debe poder acceder');
+
+    // 2. CSRF & x-webhook-secret Validation Tests
+    const prevSecret = process.env.TIKTOK_WEBHOOK_SECRET;
+    try {
+      process.env.TIKTOK_WEBHOOK_SECRET = 'super_secret_webhook_123';
+
+      // Petición POST con cabecera x-webhook-secret FALSA
+      let csrfNextCalled = false;
+      let csrfStatus: number | null = null;
+      const fakeSecretReq: any = {
+        method: 'POST',
+        headers: {
+          'x-webhook-secret': 'wrong_secret',
+        },
+        authSource: 'cookie',
+        cookies: { livetrigger_session: 'some_session' },
+      };
+      const csrfRes: any = {
+        status: (code: number) => {
+          csrfStatus = code;
+          return { json: (d: any) => d };
+        },
+      };
+
+      csrfProtection(fakeSecretReq, csrfRes, () => { csrfNextCalled = true; });
+      assert(csrfStatus === 403 && !csrfNextCalled, 'Secreto de webhook falso no debe eximir la protección CSRF y debe retornar 403');
+
+      // Petición POST con cabecera x-webhook-secret VÁLIDA
+      csrfNextCalled = false;
+      csrfStatus = null;
+      const validSecretReq: any = {
+        method: 'POST',
+        headers: {
+          'x-webhook-secret': 'super_secret_webhook_123',
+        },
+        authSource: 'cookie',
+        cookies: { livetrigger_session: 'some_session' },
+      };
+      csrfProtection(validSecretReq, csrfRes, () => { csrfNextCalled = true; });
+      assert(csrfNextCalled, 'Secreto de webhook válido debe eximir correctamente la comprobación CSRF');
+    } finally {
+      process.env.TIKTOK_WEBHOOK_SECRET = prevSecret;
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
