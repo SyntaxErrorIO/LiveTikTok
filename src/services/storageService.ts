@@ -254,6 +254,7 @@ export const DEFAULT_CONNECTION: ConnectionConfig = {
   roomId: '7412984920491029381',
   bridgeServerUrl: 'ws://localhost:21213',
   autoReconnect: true,
+  desiredConnected: true,
   connectedAt: Date.now() - 3600000,
   lastActivityAt: Date.now(),
   viewerCount: 1420,

@@ -8,31 +8,39 @@ export interface FailSafeStatus {
   suppressOverlayAnimations: boolean;
 }
 
+const DEFAULT_FAIL_SAFE: FailSafeStatus = {
+  active: false,
+  reason: null,
+  triggeredAt: null,
+  source: null,
+  suppressOverlayAnimations: true,
+};
+
 export class FailSafeManager {
-  private static status: FailSafeStatus = {
-    active: false,
-    reason: null,
-    triggeredAt: null,
-    source: null,
-    suppressOverlayAnimations: true,
-  };
+  private static globalStatus: FailSafeStatus = { ...DEFAULT_FAIL_SAFE };
+  private static userStatuses: Map<string, FailSafeStatus> = new Map();
+  private static listeners: ((status: FailSafeStatus, userId?: string) => void)[] = [];
 
-  private static listeners: ((status: FailSafeStatus) => void)[] = [];
-
-  public static getStatus(): FailSafeStatus {
-    return { ...this.status };
+  public static getStatus(userId?: string): FailSafeStatus {
+    const key = userId || 'default';
+    const status = this.userStatuses.get(key) || this.globalStatus;
+    return { ...status };
   }
 
   public static activate(
     reason: string,
     source: FailSafeStatus['source'] = 'tiktok_disconnect',
-    suppressOverlay: boolean = true
+    suppressOverlay: boolean = true,
+    userId?: string
   ): FailSafeStatus {
-    if (this.status.active && this.status.reason === reason) {
-      return this.getStatus();
+    const key = userId || 'default';
+    const current = this.userStatuses.get(key) || this.globalStatus;
+
+    if (current.active && current.reason === reason) {
+      return { ...current };
     }
 
-    this.status = {
+    const nextStatus: FailSafeStatus = {
       active: true,
       reason,
       triggeredAt: Date.now(),
@@ -40,42 +48,51 @@ export class FailSafeManager {
       suppressOverlayAnimations: suppressOverlay,
     };
 
-    SystemLogger.error('FAIL_SAFE', `MODO SEGURO ACTIVADO: ${reason}`, {
-      details: { source, suppressOverlay },
+    if (userId) {
+      this.userStatuses.set(userId, nextStatus);
+    } else {
+      this.globalStatus = nextStatus;
+    }
+
+    SystemLogger.error('FAIL_SAFE', `MODO SEGURO ACTIVADO [scope: ${key}]: ${reason}`, {
+      details: { source, suppressOverlay, userId: userId || 'global' },
     });
 
-    this.notify();
-    return this.getStatus();
+    this.notify(userId);
+    return { ...nextStatus };
   }
 
-  public static reset(reason: string = 'Recuperación de servicio o restablecimiento manual'): FailSafeStatus {
-    if (!this.status.active) return this.getStatus();
+  public static reset(reason: string = 'Recuperación de servicio o restablecimiento manual', userId?: string): FailSafeStatus {
+    const key = userId || 'default';
+    const current = this.userStatuses.get(key) || this.globalStatus;
 
-    this.status = {
-      active: false,
-      reason: null,
-      triggeredAt: null,
-      source: null,
-      suppressOverlayAnimations: true,
-    };
+    if (!current.active) return { ...current };
 
-    SystemLogger.info('FAIL_SAFE', `Modo Seguro desactivado: ${reason}`);
-    this.notify();
-    return this.getStatus();
+    const nextStatus: FailSafeStatus = { ...DEFAULT_FAIL_SAFE };
+
+    if (userId) {
+      this.userStatuses.set(userId, nextStatus);
+    } else {
+      this.globalStatus = nextStatus;
+    }
+
+    SystemLogger.info('FAIL_SAFE', `Modo Seguro desactivado [scope: ${key}]: ${reason}`);
+    this.notify(userId);
+    return { ...nextStatus };
   }
 
-  public static onStateChange(cb: (status: FailSafeStatus) => void): () => void {
+  public static onStateChange(cb: (status: FailSafeStatus, userId?: string) => void): () => void {
     this.listeners.push(cb);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== cb);
     };
   }
 
-  private static notify() {
-    const current = this.getStatus();
+  private static notify(userId?: string) {
+    const current = this.getStatus(userId);
     this.listeners.forEach((cb) => {
       try {
-        cb(current);
+        cb(current, userId);
       } catch {}
     });
   }

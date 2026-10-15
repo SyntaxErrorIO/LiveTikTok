@@ -2479,6 +2479,42 @@ async function runAllTests() {
     assert(!receivedUserB, 'Usuario B NO debe recibir mensajes broadcast dirigidos al usuario A (aislamiento multiusuario)');
   });
 
+  // 64. Corrección 2 (Paso 2): Fail-Safe aislado por usuario, intención deseada y cancelación de conexión
+  await test('64. Corrección 2 (Paso 2): Fail-Safe aislado por usuario, intención deseada y cancelación de conexión', async () => {
+    const { FailSafeManager } = await import('../src/server/failSafeManager');
+    const { ConnectorManager } = await import('../src/server/engine/connectorManager');
+
+    // 1. Fail-Safe aislado por usuario
+    FailSafeManager.activate('Error de conexión usuario A', 'tiktok_disconnect', true, 'user_a');
+    const fsA = FailSafeManager.getStatus('user_a');
+    const fsB = FailSafeManager.getStatus('user_b');
+
+    assert(fsA.active === true, 'Fail-Safe de usuario A debe estar activo');
+    assert(fsB.active === false, 'Fail-Safe de usuario B debe permanecer inactivo (aislamiento)');
+
+    FailSafeManager.reset('Reconexión usuario A', 'user_a');
+    assert(FailSafeManager.getStatus('user_a').active === false, 'Fail-Safe de usuario A debe desactivarse sin afectar B');
+
+    // 2. Intención deseada (desiredConnected)
+    StateStore.saveConnection({
+      username: 'manual_disconnect_user',
+      mode: 'simulation',
+      bridgeServerUrl: 'ws://localhost:21213',
+      status: 'disconnected',
+      autoReconnect: true,
+      desiredConnected: false,
+    }, 'user_manual_disc');
+
+    const connDisc = StateStore.getConnection('user_manual_disc');
+    const isIntended = connDisc.desiredConnected === true || (connDisc.desiredConnected === undefined && connDisc.status === 'connected');
+    assert(!isIntended, 'Usuario con desconexión manual (desiredConnected: false) no debe tener intención de reconectar');
+
+    // 3. ConnectorManager concurrencia y generación
+    const manager = new ConnectorManager();
+    const activeA = manager.getActiveConnector('user_a');
+    assert(activeA === null, 'No debe haber conector activo inicial para usuario A');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

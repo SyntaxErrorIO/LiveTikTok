@@ -192,6 +192,7 @@ export interface ConnectionConfig {
   bridgeServerUrl: string; // e.g. ws://localhost:21213
   connectorType?: 'direct' | 'bridge';
   autoReconnect: boolean;
+  desiredConnected?: boolean;
   connectedAt?: number;
   lastActivityAt?: number;
   viewerCount?: number;

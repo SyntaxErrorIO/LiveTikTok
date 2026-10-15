@@ -124,7 +124,8 @@ async function startServer() {
 
           try {
             const conn = StateStore.getConnection(uid);
-            if (conn.status === 'connected' && conn.autoReconnect !== false && conn.username && conn.username.trim().length > 0) {
+            const isIntendedConnected = conn.desiredConnected === true || (conn.desiredConnected === undefined && conn.status === 'connected');
+            if (isIntendedConnected && conn.autoReconnect !== false && conn.username && conn.username.trim().length > 0) {
               SystemLogger.info('ENGINE', `Recuperación automática de conexión tras reinicio para ámbito ${uid}...`, {
                 details: { mode: conn.mode, channel: conn.username },
               });
