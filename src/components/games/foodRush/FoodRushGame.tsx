@@ -13,7 +13,7 @@ import { RealisticChefStation } from './RealisticChefStation';
 import { FoodMenuBoard } from './FoodMenuBoard';
 import { FullScreenOrderShowcase } from './FullScreenOrderShowcase';
 import { foodAudio } from './foodAudio';
-import { CustomerAvatar } from './CustomerAvatar';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 import { ServingDishToss } from './ServingDishToss';
 import { GameStorageService } from '../../../services/gameStorageService';
 import { eventBus } from '../../../services/eventBus';
@@ -448,7 +448,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         }, 1800);
       }
 
-      // 3. Comment Event: Chef encouragement & mini-boost
+      // 3. Comment Event: Chef encouragement & mini-boost / Free hunger comments
       else if (event.type === 'comment' && config.foodRush.commentsBoostEnabled) {
         const comment = event.data.comment?.trim();
         if (comment) {
@@ -460,6 +460,14 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
             lower.includes('queso') ||
             lower.includes('ratatouille');
 
+          const isHungryComment =
+            lower.includes('hambre') ||
+            lower.includes('pedido') ||
+            lower.includes('chaufa') ||
+            lower.includes('burger') ||
+            lower.includes('!pedir') ||
+            lower.includes('comida');
+
           if (isCallingRemy) {
             foodAudio.playRemySqueak();
             setRecentCheer({
@@ -468,6 +476,12 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
             });
             setBoostActiveUntil((prev) => Math.max(prev, Date.now() + 6000));
             setSpeedMultiplier((prev) => Math.min(2.5, prev + 0.2));
+          } else if (isHungryComment) {
+            setRecentCheer({
+              user: event.user.nickname || event.user.username,
+              text: `¡Tiene hambre! Manda una Rosa para atenderte con prioridad VIP 🍲✨`,
+            });
+            setBoostActiveUntil((prev) => Math.max(prev, Date.now() + 3000));
           } else {
             setRecentCheer({
               user: event.user.nickname || event.user.username,
