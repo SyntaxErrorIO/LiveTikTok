@@ -161,6 +161,7 @@ export class ConnectorManager {
         );
       } else {
         try { connector.disconnect(); } catch {}
+        this.cleanupAttemptListeners(targetUserId, currentGen);
         FailSafeManager.activate('No fue posible negociar la conexión con el proveedor.', 'tiktok_disconnect', true, userId);
         broadcast(
           {

@@ -2607,6 +2607,81 @@ async function runAllTests() {
     assert(activeUnsubsCount === 0, 'Prueba K: Cero listeners residuales almacenados tras ciclos de desconexión');
   });
 
+  // 66. Validación Final Paso 2: Excepciones en connect, liberación real de recursos y superposición fuera de orden
+  await test('66. Validación Final Paso 2: Excepciones en connect, liberación real de recursos y superposición fuera de orden', async () => {
+    const { ConnectorManager } = await import('../src/server/engine/connectorManager');
+    const { TikTokConnectorFactory } = await import('../src/server/connectors/connectorFactory');
+
+    // 1. Excepción real en connect()
+    let unsubCalledCount = 0;
+    const mockConnector = {
+      mode: 'simulation' as const,
+      connect: async () => { throw new Error('Fallo simulado de red en connect'); },
+      disconnect: () => {},
+      onEvent: () => { return () => { unsubCalledCount++; }; },
+      onStatusChange: () => { return () => { unsubCalledCount++; }; },
+      testLatency: async () => 10,
+    };
+
+    const origCreate = TikTokConnectorFactory.createConnector;
+    (TikTokConnectorFactory as any).createConnector = () => mockConnector;
+
+    try {
+      const managerEx = new ConnectorManager();
+      const res = await managerEx.connect('user_ex', () => {}, () => {});
+      assert(res === false, 'Debe retornar false ante una excepción en connect()');
+      assert(managerEx.getActiveConnector('user_ex') === null, 'No debe haber conector activo tras excepción');
+      assert(unsubCalledCount > 0, 'Los listeners deben haberse liberado (unsub llamado)');
+    } finally {
+      (TikTokConnectorFactory as any).createConnector = origCreate;
+    }
+
+    // 2. Superposición de conexiones y resolución fuera de orden (Out-of-order promise resolution)
+    let resolveFirstConn: (val: boolean) => void = () => {};
+    let firstDisconnected: boolean = false;
+
+    const connector1 = {
+      mode: 'simulation' as const,
+      connect: () => new Promise<boolean>((res) => { resolveFirstConn = res; }),
+      disconnect: () => { firstDisconnected = true; },
+      onEvent: () => () => {},
+      onStatusChange: () => () => {},
+      testLatency: async () => 10,
+    };
+
+    const connector2 = {
+      mode: 'simulation' as const,
+      connect: async () => true,
+      disconnect: () => {},
+      onEvent: () => () => {},
+      onStatusChange: () => () => {},
+      testLatency: async () => 10,
+    };
+
+    let callCount = 0;
+    (TikTokConnectorFactory as any).createConnector = () => {
+      callCount++;
+      return callCount === 1 ? connector1 : connector2;
+    };
+
+    try {
+      const managerOverlap = new ConnectorManager();
+      const p1 = managerOverlap.connect('user_overlap', () => {}, () => {});
+      const p2 = managerOverlap.connect('user_overlap', () => {}, () => {});
+      const res2 = await p2;
+      assert(res2 === true, 'La segunda conexión debe completarse exitosamente');
+      assert((managerOverlap.getActiveConnector('user_overlap') as any) === connector2, 'El conector activo debe ser el segundo');
+
+      resolveFirstConn(true);
+      const res1 = await p1;
+      assert((res1 as boolean) === false, 'La conexión obsoleta (1) debe retornar false al resolverse tarde');
+      assert((managerOverlap.getActiveConnector('user_overlap') as any) === connector2, 'El conector activo (2) NO debe haber sido alterado por la resolución tardía de 1');
+      assert((firstDisconnected as boolean) === true, 'El conector obsoleto 1 debe haber recibido disconnect()');
+    } finally {
+      (TikTokConnectorFactory as any).createConnector = origCreate;
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
