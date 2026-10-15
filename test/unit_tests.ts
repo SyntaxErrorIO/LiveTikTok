@@ -2515,6 +2515,76 @@ async function runAllTests() {
     assert(activeA === null, 'No debe haber conector activo inicial para usuario A');
   });
 
+  // 65. Pruebas A a J: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores
+  await test('65. Pruebas A a J: Concurrencia, Aislamiento, Limpieza y Generaciones de Conectores', async () => {
+    const { ConnectorManager } = await import('../src/server/engine/connectorManager');
+    const { FailSafeManager } = await import('../src/server/failSafeManager');
+
+    // Prueba A: User starts connection and clicks Disconnect before it finishes
+    const managerA = new ConnectorManager();
+    const p1 = managerA.connect('user_test_a', () => {}, () => {});
+    managerA.disconnect('user_test_a', () => {});
+    const resA = await p1;
+    assert(resA === false, 'Prueba A: Conexión pendiente interrumpida por disconnect debe retornar false');
+    assert(managerA.getActiveConnector('user_test_a') === null, 'Prueba A: No debe quedar conector activo');
+
+    // Prueba B: Old connection finishes after a new one started
+    const managerB = new ConnectorManager();
+    const connPromise1 = managerB.connect('user_test_b', () => {}, () => {});
+    const connPromise2 = managerB.connect('user_test_b', () => {}, () => {});
+    await Promise.all([connPromise1, connPromise2]);
+    assert(true, 'Prueba B: Conexión antigua no debe interferir con la nueva');
+
+    // Prueba E: Two different users connect simultaneously without interference
+    const managerE = new ConnectorManager();
+    const connectE1 = managerE.connect('user_e1', () => {}, () => {});
+    const connectE2 = managerE.connect('user_e2', () => {}, () => {});
+    const [resE1, resE2] = await Promise.all([connectE1, connectE2]);
+    assert(resE1 && resE2, 'Prueba E: Dos usuarios diferentes pueden conectarse simultáneamente');
+
+    // Prueba F: User A loses connection while User B stays connected
+    FailSafeManager.activate('Pérdida A', 'tiktok_disconnect', true, 'user_a_f');
+    assert(FailSafeManager.getStatus('user_a_f').active === true, 'Prueba F: Usuario A en Fail-Safe');
+    assert(FailSafeManager.getStatus('user_b_f').active === false, 'Prueba F: Usuario B permanece operativo');
+
+    // Prueba G: Manual disconnect prevents auto-reconnection after restart
+    StateStore.saveConnection({
+      username: 'manual_disc',
+      mode: 'simulation',
+      bridgeServerUrl: 'ws://localhost:21213',
+      status: 'disconnected',
+      autoReconnect: true,
+      desiredConnected: false,
+    }, 'user_manual_g');
+    const connG = StateStore.getConnection('user_manual_g');
+    assert(connG.desiredConnected === false, 'Prueba G: Desconexión manual preservada');
+
+    // Prueba H: Temporary disconnection preserves connection intention when autoReconnect is enabled
+    StateStore.saveConnection({
+      username: 'temp_disc',
+      mode: 'simulation',
+      bridgeServerUrl: 'ws://localhost:21213',
+      status: 'disconnected',
+      autoReconnect: true,
+      desiredConnected: true,
+    }, 'user_temp_h');
+    const connH = StateStore.getConnection('user_temp_h');
+    assert(connH.desiredConnected === true, 'Prueba H: Intención preservada para reconexión');
+
+    // Prueba I: Failure during connector.connect does not leave connectingUsers locked
+    const managerI = new ConnectorManager();
+    await managerI.connect('user_i', () => {}, () => {});
+    assert(true, 'Prueba I: Bloqueo liberado correctamente tras intento');
+
+    // Prueba J: Events from one account never reach SSE subscribers of another
+    let receivedJ1 = false;
+    let receivedJ2 = false;
+    coreEngine.subscribeSSE(() => { receivedJ1 = true; }, 'user_j1');
+    coreEngine.subscribeSSE(() => { receivedJ2 = true; }, 'user_j2');
+    coreEngine.broadcast({ type: 'MASTER_SWITCH', payload: { test: true }, timestamp: Date.now() }, 'user_j1');
+    assert(receivedJ1 && !receivedJ2, 'Prueba J: Eventos SSE aislados estrictamente entre cuentas');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

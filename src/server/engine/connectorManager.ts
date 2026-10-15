@@ -9,6 +9,17 @@ export class ConnectorManager {
   private activeConnectors: Map<string, ITikTokConnector> = new Map();
   private connectingUsers: Set<string> = new Set();
   private connectionGenerations: Map<string, number> = new Map();
+  private unsubscribers: Map<string, (() => void)[]> = new Map();
+
+  private cleanupListeners(targetUserId: string) {
+    const unsubs = this.unsubscribers.get(targetUserId);
+    if (unsubs) {
+      unsubs.forEach((unsub) => {
+        try { unsub(); } catch {}
+      });
+      this.unsubscribers.delete(targetUserId);
+    }
+  }
 
   public async connect(
     userId: string | undefined,
@@ -32,10 +43,13 @@ export class ConnectorManager {
       conn.status = 'connecting';
       StateStore.saveConnection(conn, userId);
 
-      // If existing connector has different mode or connectorType, tear down cleanly
+      // Clean up old listeners
+      this.cleanupListeners(targetUserId);
+
+      // Always obtain a clean connector instance matching current mode & connectorType
       const existing = this.activeConnectors.get(targetUserId);
       if (existing && (existing.mode !== conn.mode || (conn.connectorType && existing.connectorType !== conn.connectorType))) {
-        existing.disconnect();
+        try { existing.disconnect(); } catch {}
         this.activeConnectors.delete(targetUserId);
       }
 
@@ -43,53 +57,68 @@ export class ConnectorManager {
       if (!connector) {
         connector = TikTokConnectorFactory.createConnector(conn.mode, conn.connectorType || 'direct');
         this.activeConnectors.set(targetUserId, connector);
+      }
 
-        // Listen to raw events from connector
-        connector.onEvent((rawEvent) => {
-          if (this.connectionGenerations.get(targetUserId) !== currentGen) return; // Obsolete
-          onRawEvent(rawEvent, connector?.mode || 'simulation');
-        });
+      const unsubs: (() => void)[] = [];
 
-        // Listen to status updates
-        connector.onStatusChange((statusEvent) => {
-          if (this.connectionGenerations.get(targetUserId) !== currentGen) return; // Obsolete
+      // Listen to raw events from connector
+      const unsubEvent = connector.onEvent((rawEvent) => {
+        if (this.connectionGenerations.get(targetUserId) !== currentGen) return;
+        onRawEvent(rawEvent, connector?.mode || 'simulation');
+      });
+      unsubs.push(unsubEvent);
 
-          conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
-          conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
-          conn.errorMessage = statusEvent.errorMessage;
-          conn.notice = statusEvent.notice;
-          conn.warning = statusEvent.warning;
-          if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
-          if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
-          StateStore.saveConnection(conn, userId);
+      // Listen to status updates
+      const unsubStatus = connector.onStatusChange((statusEvent) => {
+        if (this.connectionGenerations.get(targetUserId) !== currentGen) return;
 
-          if (statusEvent.status === 'error') {
-            FailSafeManager.activate(statusEvent.errorMessage || 'Error crítico en el conector de TikTok', 'tiktok_disconnect', true, userId);
-            broadcast(
-              {
-                type: 'FAIL_SAFE_STATE',
-                payload: FailSafeManager.getStatus(userId),
-                timestamp: Date.now(),
-              },
-              userId
-            );
-          }
+        conn.status = (statusEvent.status === 'reconnecting' ? 'connecting' : statusEvent.status) as any;
+        conn.lastActivityAt = statusEvent.lastActivityAt || Date.now();
+        conn.errorMessage = statusEvent.errorMessage;
+        conn.notice = statusEvent.notice;
+        conn.warning = statusEvent.warning;
+        if (statusEvent.pingMs) conn.pingMs = statusEvent.pingMs;
+        if (statusEvent.viewerCount) conn.viewerCount = statusEvent.viewerCount;
+        StateStore.saveConnection(conn, userId);
 
+        if (statusEvent.status === 'error') {
+          FailSafeManager.activate(statusEvent.errorMessage || 'Error crítico en el conector de TikTok', 'tiktok_disconnect', true, userId);
           broadcast(
             {
-              type: 'CONNECTION_STATUS',
-              payload: conn,
+              type: 'FAIL_SAFE_STATE',
+              payload: FailSafeManager.getStatus(userId),
               timestamp: Date.now(),
             },
             userId
           );
-        });
-      }
+        }
+
+        broadcast(
+          {
+            type: 'CONNECTION_STATUS',
+            payload: conn,
+            timestamp: Date.now(),
+          },
+          userId
+        );
+      });
+      unsubs.push(unsubStatus);
+      this.unsubscribers.set(targetUserId, unsubs);
 
       const success = await connector.connect(conn);
 
-      // Check if generation changed during async await (e.g., user clicked disconnect or started new connect)
+      // Check if generation changed during async await (e.g., user clicked disconnect)
       if (this.connectionGenerations.get(targetUserId) !== currentGen) {
+        // Obsolete connection attempt finished after user disconnected: ensure cleanup!
+        try {
+          if (this.activeConnectors.get(targetUserId) === connector) {
+            connector.disconnect();
+            this.activeConnectors.delete(targetUserId);
+          } else {
+            connector.disconnect();
+          }
+        } catch {}
+        this.cleanupListeners(targetUserId);
         return false;
       }
 
@@ -123,20 +152,20 @@ export class ConnectorManager {
   public disconnect(userId?: string, broadcast?: (msg: SSEBroadcastMessage, userId?: string) => void) {
     const targetUserId = userId || 'default';
 
-    // Invalidate any pending connection attempts or callbacks for this user
     const gen = (this.connectionGenerations.get(targetUserId) || 0) + 1;
     this.connectionGenerations.set(targetUserId, gen);
     this.connectingUsers.delete(targetUserId);
+    this.cleanupListeners(targetUserId);
 
     const connector = this.activeConnectors.get(targetUserId);
     if (connector) {
-      connector.disconnect();
+      try { connector.disconnect(); } catch {}
       this.activeConnectors.delete(targetUserId);
     }
 
     const conn = StateStore.getConnection(userId);
     conn.status = 'disconnected';
-    conn.desiredConnected = false; // User intentional disconnect
+    conn.desiredConnected = false; // Intentional manual disconnect
     StateStore.saveConnection(conn, userId);
 
     FailSafeManager.reset('Desconexión manual por el usuario', userId);
@@ -157,15 +186,11 @@ export class ConnectorManager {
     broadcast?: (msg: SSEBroadcastMessage, userId?: string) => void,
     recordLog?: (event: any, matched: any, overall: any, time: number, err?: string, uid?: string) => void
   ) {
-    const targetUserId = userId || 'default';
-    if (this.connectionGenerations.get(targetUserId) !== (this.connectionGenerations.get(targetUserId) || 0)) {
-      // noop if generation invalid
-    }
-
     const conn = StateStore.getConnection(userId);
     conn.status = 'disconnected';
     conn.errorMessage = reason;
     conn.lastActivityAt = Date.now();
+    // Preserve conn.desiredConnected because provider disconnect is network failure, not manual user disconnect
     StateStore.saveConnection(conn, userId);
 
     FailSafeManager.activate(reason, 'tiktok_disconnect', true, userId);
