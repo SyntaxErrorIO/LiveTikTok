@@ -2852,6 +2852,58 @@ async function runAllTests() {
     assert(burstResults.every((r) => r.accepted), 'L. Ráfaga de eventos procesada con seguridad');
   });
 
+  // 69. Validación Real de Integración: Motor de Deduplicación, Food Rush, Boss Battle y Overlays OBS
+  await test('69. Validación Real de Integración: Motor de Deduplicación, Food Rush, Boss Battle y Overlays OBS', async () => {
+    // 1. Deduplicación en el motor real (coreEngine.ingestRawEvent)
+    const testEventId = 'dedup-engine-test-111';
+    const rawPacket = { type: 'gift', user: { username: 'dedup_user' }, gift: { name: 'Rose', diamonds: 1 }, id: testEventId };
+
+    const firstIngest = await coreEngine.ingestRawEvent(rawPacket, 'simulation', 'user_dedup_test');
+    assert(firstIngest.accepted === true, 'El primer evento válido debe ser aceptado por el motor');
+
+    const duplicateIngest = await coreEngine.ingestRawEvent(rawPacket, 'simulation', 'user_dedup_test');
+    assert(duplicateIngest.accepted === false, 'El evento duplicado con el mismo ID debe ser rechazado');
+    assert(duplicateIngest.reason.includes('duplicado'), 'La razón debe indicar que es duplicado');
+
+    const distinctPacket1 = { type: 'gift', user: { username: 'dedup_user' }, gift: { name: 'Rose', diamonds: 1 }, id: 'dist-1' };
+    const distinctPacket2 = { type: 'gift', user: { username: 'dedup_user' }, gift: { name: 'Rose', diamonds: 1 }, id: 'dist-2' };
+    const resDist1 = await coreEngine.ingestRawEvent(distinctPacket1, 'simulation', 'user_dedup_test');
+    const resDist2 = await coreEngine.ingestRawEvent(distinctPacket2, 'simulation', 'user_dedup_test');
+    assert(resDist1.accepted && resDist2.accepted, 'Dos eventos legítimos con IDs distintos deben ser aceptados ambos');
+
+    // 2. Integración real con Food Rush & Boss Battle (vía engine y GamesRepository)
+    const { GamesRepository } = await import('../src/server/db/gamesRepo');
+    const gameConfig = {
+      foodRush: { vipOrderMinCoins: 10, targetDishes: 20 },
+      bossBattle: { maxHp: 1000, currentHp: 1000 },
+    };
+    GamesRepository.saveGameConfig(gameConfig, 'user_games_int');
+    const loadedGameCfg = GamesRepository.getGameConfig('user_games_int');
+    assert(loadedGameCfg !== null && loadedGameCfg.foodRush.targetDishes === 20, 'Configuración de Food Rush persistida y recuperada');
+    assert(loadedGameCfg.bossBattle.maxHp === 1000, 'Configuración de Boss Battle persistida y recuperada');
+
+    // 3. Validación real de OBS y aislamientos SSE/Overlay
+    let obsEventsUserA: any[] = [];
+    let obsEventsUserB: any[] = [];
+
+    const unsubObsA = coreEngine.subscribeSSE((msg) => {
+      if (msg.type === 'TIKTOK_EVENT') obsEventsUserA.push(msg.payload);
+    }, 'user_obs_a', 'token_a');
+
+    const unsubObsB = coreEngine.subscribeSSE((msg) => {
+      if (msg.type === 'TIKTOK_EVENT') obsEventsUserB.push(msg.payload);
+    }, 'user_obs_b', 'token_b');
+
+    await coreEngine.ingestRawEvent({ type: 'gift', user: { username: 'streamer_a' }, gift: { name: 'Lion' }, id: 'obs-evt-a-1' }, 'simulation', 'user_obs_a');
+    await coreEngine.ingestRawEvent({ type: 'gift', user: { username: 'streamer_b' }, gift: { name: 'Lion' }, id: 'obs-evt-b-1' }, 'simulation', 'user_obs_b');
+
+    unsubObsA();
+    unsubObsB();
+
+    assert(obsEventsUserA.length === 1 && obsEventsUserA[0].user.username === 'streamer_a', 'Overlay A recibe exclusivamente los eventos de su sesión');
+    assert(obsEventsUserB.length === 1 && obsEventsUserB[0].user.username === 'streamer_b', 'Overlay B recibe exclusivamente los eventos de su sesión');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
