@@ -318,22 +318,22 @@ export const StreetFoodScenery: React.FC = () => {
       </div>
 
       {/* Resplandor cálido de luces de cocina y fogones */}
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-[500px] h-[340px] bg-gradient-to-b from-amber-500/20 via-orange-600/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-[500px] sm:w-[700px] md:w-[900px] lg:w-[1100px] h-[340px] sm:h-[460px] md:h-[580px] lg:h-[700px] bg-gradient-to-b from-amber-500/20 via-orange-600/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
       {/* ============================================================== */}
       {/* 2. REPISAS SUPERIORES DE MADERA RÚSTICA (Detalles de la Imagen 1) */}
       {/* ============================================================== */}
-      <div className="absolute top-2 inset-x-0 flex flex-col items-center z-10 px-2 sm:px-6">
+      <div className="absolute top-2 inset-x-0 flex flex-col items-center z-10 px-2 sm:px-6 md:px-10 lg:px-14">
         {/* Repisa Superior 1: Cuencos de colores apilados, tetera de cobre, botellas */}
         <div className="w-full relative flex flex-col items-center">
           {/* Objetos sobre la repisa 1 */}
-          <div className="w-full flex items-end justify-between px-3 sm:px-8 pb-1 z-10">
+          <div className="w-full flex items-end justify-between px-3 sm:px-8 md:px-12 pb-1 z-10">
             {/* Sector Izquierdo: Olla naranja de barro esmaltado + Pilas de cuencos (Imagen 1) */}
-            <div className="flex items-end gap-2 sm:gap-3">
+            <div className="flex items-end gap-2 sm:gap-3 md:gap-4">
               {/* Olla de barro esmaltado naranja con asas */}
               <div className="relative flex flex-col items-center">
-                <div className="w-3 h-1.5 rounded-t bg-amber-600 -mb-0.5" />
-                <div className="w-9 sm:w-11 h-7 sm:h-8 rounded-b-xl bg-gradient-to-r from-amber-600 via-orange-500 to-amber-700 border border-amber-400 shadow-md relative">
+                <div className="w-3 sm:w-4 md:w-5 h-1.5 sm:h-2 rounded-t bg-amber-600 -mb-0.5" />
+                <div className="w-9 sm:w-11 md:w-14 lg:w-16 h-7 sm:h-8 md:h-10 lg:h-12 rounded-b-xl bg-gradient-to-r from-amber-600 via-orange-500 to-amber-700 border border-amber-400 shadow-md relative">
                   <div className="absolute -left-1.5 top-2 w-2 h-2.5 rounded-l-full border-2 border-amber-500" />
                   <div className="absolute -right-1.5 top-2 w-2 h-2.5 rounded-r-full border-2 border-amber-500" />
                 </div>
@@ -342,26 +342,26 @@ export const StreetFoodScenery: React.FC = () => {
               {/* Pilas de cuencos de colores apilados (Azul, amarillo, magenta de la Imagen 1) */}
               <div className="flex flex-col items-center -space-y-1">
                 {/* Cuenco azul turquesa */}
-                <div className="w-8 sm:w-9 h-2.5 rounded-b-lg bg-cyan-400 border border-cyan-200 shadow-sm" />
+                <div className="w-8 sm:w-9 md:w-11 lg:w-13 h-2.5 sm:h-3 md:h-3.5 rounded-b-lg bg-cyan-400 border border-cyan-200 shadow-sm" />
                 {/* Cuenco verde lima */}
-                <div className="w-9 sm:w-10 h-2.5 rounded-b-lg bg-emerald-400 border border-emerald-200 shadow-sm" />
+                <div className="w-9 sm:w-10 md:w-12 lg:w-14 h-2.5 sm:h-3 md:h-3.5 rounded-b-lg bg-emerald-400 border border-emerald-200 shadow-sm" />
                 {/* Cuenco amarillo cálido */}
-                <div className="w-10 sm:w-11 h-3 rounded-b-lg bg-amber-400 border border-amber-200 shadow-sm" />
+                <div className="w-10 sm:w-11 md:w-13 lg:w-15 h-3 sm:h-3.5 md:h-4 rounded-b-lg bg-amber-400 border border-amber-200 shadow-sm" />
                 {/* Cuenco magenta / terracota */}
-                <div className="w-11 sm:w-12 h-3.5 rounded-b-lg bg-rose-500 border border-rose-300 shadow-sm" />
+                <div className="w-11 sm:w-12 md:w-14 lg:w-16 h-3.5 sm:h-4 md:h-4.5 rounded-b-lg bg-rose-500 border border-rose-300 shadow-sm" />
               </div>
 
               {/* Pila de platos hondos blancos esmaltados */}
               <div className="hidden sm:flex flex-col items-center -space-y-0.5">
-                <div className="w-10 h-1.5 rounded-full bg-slate-100 border border-slate-300" />
-                <div className="w-11 h-1.5 rounded-full bg-slate-200 border border-slate-300" />
-                <div className="w-12 h-2 rounded-full bg-slate-300 border border-slate-400 shadow-sm" />
+                <div className="w-10 sm:w-12 md:w-14 h-1.5 sm:h-2 rounded-full bg-slate-100 border border-slate-300" />
+                <div className="w-11 sm:w-13 md:w-15 h-1.5 sm:h-2 rounded-full bg-slate-200 border border-slate-300" />
+                <div className="w-12 sm:w-14 md:w-16 h-2 sm:h-2.5 rounded-full bg-slate-300 border border-slate-400 shadow-sm" />
               </div>
             </div>
 
             {/* Cartel central gourmet bistró */}
             <div className="flex flex-col items-center pb-0.5">
-              <div className="px-3 py-0.5 rounded-full bg-black/75 border border-amber-400/50 backdrop-blur-md flex items-center gap-1.5 text-[10px] text-amber-300 font-mono font-bold shadow-lg">
+              <div className="px-3 py-0.5 sm:px-4 sm:py-1 md:px-5 md:py-1.5 rounded-full bg-black/75 border border-amber-400/50 backdrop-blur-md flex items-center gap-1.5 md:gap-2 text-[10px] sm:text-xs md:text-sm text-amber-300 font-mono font-bold shadow-lg">
                 <span className="text-amber-400">👨‍🍳</span>
                 <span>RESTAURANTE GOURMET · CHEF STATION</span>
                 <span className="text-amber-400">🐀</span>
@@ -369,34 +369,34 @@ export const StreetFoodScenery: React.FC = () => {
             </div>
 
             {/* Sector Derecho: Tetera de cobre clásica con mango de madera + botellas de vino/aceite (Imagen 1) */}
-            <div className="flex items-end gap-2 sm:gap-3">
+            <div className="flex items-end gap-2 sm:gap-3 md:gap-4">
               {/* Tetera de cobre clásica con mango curvado de madera (idéntica a la Imagen 1) */}
               <div className="relative flex flex-col items-center">
                 {/* Mango superior de madera curvado */}
-                <div className="w-7 sm:w-8 h-4 border-t-2 border-x-2 border-[#5c3015] rounded-t-full -mb-1 shadow-sm" />
+                <div className="w-7 sm:w-8 md:w-10 h-4 sm:h-5 md:h-6 border-t-2 border-x-2 border-[#5c3015] rounded-t-full -mb-1 shadow-sm" />
                 {/* Cuerpo de cobre brillante */}
-                <div className="w-8 sm:w-10 h-7 rounded-2xl bg-gradient-to-r from-[#94381e] via-[#c25e2e] to-[#7c2d12] border border-[#d97736] shadow-md relative">
-                  <div className="w-2.5 h-1 bg-amber-400 rounded-full mx-auto mt-0.5" />
+                <div className="w-8 sm:w-10 md:w-13 lg:w-15 h-7 sm:h-8 md:h-10 lg:h-12 rounded-2xl bg-gradient-to-r from-[#94381e] via-[#c25e2e] to-[#7c2d12] border border-[#d97736] shadow-md relative">
+                  <div className="w-2.5 sm:w-3.5 h-1 sm:h-1.5 bg-amber-400 rounded-full mx-auto mt-0.5" />
                   {/* Pico de la tetera */}
-                  <div className="absolute -left-1.5 bottom-1.5 w-2 h-3.5 border-t-2 border-l-2 border-[#c25e2e] rotate-[-20deg]" />
+                  <div className="absolute -left-1.5 bottom-1.5 w-2 sm:w-3 h-3.5 sm:h-4.5 border-t-2 border-l-2 border-[#c25e2e] rotate-[-20deg]" />
                 </div>
               </div>
 
               {/* Botellas de aceite de oliva verde y salsas (Imagen 1) */}
-              <div className="flex items-end gap-1">
-                <div className="w-3 sm:w-3.5 h-8 sm:h-9 rounded-t-md bg-emerald-800 border border-emerald-600 shadow-sm relative">
-                  <div className="w-1 h-2 bg-amber-200 mx-auto -mt-1 rounded-t-xs" title="Aceite de Oliva" />
+              <div className="flex items-end gap-1 sm:gap-1.5">
+                <div className="w-3 sm:w-3.5 md:w-4.5 h-8 sm:h-9 md:h-11 rounded-t-md bg-emerald-800 border border-emerald-600 shadow-sm relative">
+                  <div className="w-1 sm:w-1.5 h-2 sm:h-2.5 bg-amber-200 mx-auto -mt-1 rounded-t-xs" title="Aceite de Oliva" />
                 </div>
-                <div className="w-3 sm:w-3.5 h-7 sm:h-8 rounded-t-md bg-rose-900 border border-rose-700 shadow-sm relative">
-                  <div className="w-1 h-2 bg-amber-200 mx-auto -mt-1 rounded-t-xs" title="Vinagre Balsámico" />
+                <div className="w-3 sm:w-3.5 md:w-4.5 h-7 sm:h-8 md:h-10 rounded-t-md bg-rose-900 border border-rose-700 shadow-sm relative">
+                  <div className="w-1 sm:w-1.5 h-2 sm:h-2.5 bg-amber-200 mx-auto -mt-1 rounded-t-xs" title="Vinagre Balsámico" />
                 </div>
-                <div className="w-4 h-5 rounded-md bg-amber-950 border border-amber-800 shadow-sm" title="Tarro de Especias" />
+                <div className="w-4 sm:w-5 md:w-6 h-5 sm:h-6 md:h-7 rounded-md bg-amber-950 border border-amber-800 shadow-sm" title="Tarro de Especias" />
               </div>
             </div>
           </div>
 
           {/* Viga de madera rústica maciza de la Repisa 1 */}
-          <div className="w-full h-3 sm:h-3.5 rounded bg-gradient-to-r from-[#422213] via-[#63351d] to-[#3a1d10] border-t border-b border-[#824626] shadow-md relative">
+          <div className="w-full h-3 sm:h-3.5 md:h-4.5 lg:h-5 rounded bg-gradient-to-r from-[#422213] via-[#63351d] to-[#3a1d10] border-t border-b border-[#824626] shadow-md relative">
             <div className="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(90deg,_transparent,_transparent_20px,_rgba(0,0,0,0.5)_21px)]" />
           </div>
         </div>
@@ -404,57 +404,57 @@ export const StreetFoodScenery: React.FC = () => {
         {/* ============================================================== */}
         {/* 3. BARRA DE UTENSILIOS COLGADOS DE ACERO (Detalles de la Imagen 2) */}
         {/* ============================================================== */}
-        <div className="w-full relative mt-2 flex flex-col items-center">
+        <div className="w-full relative mt-2 sm:mt-3 flex flex-col items-center">
           {/* Barra metálica de sujeción horizontal */}
-          <div className="w-11/12 h-1 bg-gradient-to-r from-slate-400 via-slate-200 to-slate-400 rounded-full shadow-sm relative">
+          <div className="w-11/12 h-1 sm:h-1.5 md:h-2 bg-gradient-to-r from-slate-400 via-slate-200 to-slate-400 rounded-full shadow-sm relative">
             {/* Soportes de la barra */}
-            <div className="absolute left-6 -top-1 w-2 h-3 bg-slate-600 rounded-sm" />
-            <div className="absolute right-6 -top-1 w-2 h-3 bg-slate-600 rounded-sm" />
-            <div className="absolute left-1/2 -translate-x-1/2 -top-1 w-2 h-3 bg-slate-600 rounded-sm" />
+            <div className="absolute left-6 -top-1 w-2 h-3 sm:w-2.5 sm:h-4 bg-slate-600 rounded-sm" />
+            <div className="absolute right-6 -top-1 w-2 h-3 sm:w-2.5 sm:h-4 bg-slate-600 rounded-sm" />
+            <div className="absolute left-1/2 -translate-x-1/2 -top-1 w-2 h-3 sm:w-2.5 sm:h-4 bg-slate-600 rounded-sm" />
           </div>
 
           {/* Utensilios culinarios colgados en ganchos (de Imagen 1 y 2) */}
-          <div className="w-10/12 flex items-start justify-between pt-1 px-4 text-slate-300">
+          <div className="w-10/12 flex items-start justify-between pt-1 sm:pt-2 px-4 md:px-8 text-slate-300">
             {/* Sartén de mango largo colgada (Imagen 1) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-4 bg-slate-400" />
-              <div className="w-5 h-5 rounded-full bg-slate-800 border-2 border-slate-500 shadow-md flex items-center justify-center">
-                <div className="w-3 h-3 rounded-full bg-slate-900" />
+              <div className="w-0.5 sm:w-1 h-4 sm:h-6 bg-slate-400" />
+              <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-9 md:h-9 rounded-full bg-slate-800 border-2 border-slate-500 shadow-md flex items-center justify-center">
+                <div className="w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-slate-900" />
               </div>
             </div>
 
             {/* Cazuela pequeña colgada (Imagen 1) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-3 bg-slate-400" />
-              <div className="w-4 h-4 rounded-full bg-[#1e232d] border border-slate-400 shadow-md" />
+              <div className="w-0.5 sm:w-1 h-3 sm:h-5 bg-slate-400" />
+              <div className="w-4 h-4 sm:w-6 sm:h-6 md:w-8 md:h-8 rounded-full bg-[#1e232d] border border-slate-400 shadow-md" />
             </div>
 
             {/* Espumadera de malla metálica (Imagen 2) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-3.5 bg-slate-300" />
-              <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 flex items-center justify-center">
-                <span className="text-[7px] text-slate-400">::</span>
+              <div className="w-0.5 sm:w-1 h-3.5 sm:h-5.5 bg-slate-300" />
+              <div className="w-3.5 h-3.5 sm:w-5 sm:h-5 md:w-7 md:h-7 rounded-full border-2 border-slate-300 flex items-center justify-center">
+                <span className="text-[7px] sm:text-[9px] md:text-xs text-slate-400">::</span>
               </div>
             </div>
 
             {/* Tenedor trinchador de cocina (Imagen 2) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-3.5 bg-slate-300" />
-              <div className="w-2.5 h-3 border-x-2 border-b-2 border-slate-300 rounded-b-xs" />
+              <div className="w-0.5 sm:w-1 h-3.5 sm:h-5.5 bg-slate-300" />
+              <div className="w-2.5 h-3 sm:w-4 sm:h-4.5 md:w-5 md:h-6 border-x-2 border-b-2 border-slate-300 rounded-b-xs" />
             </div>
 
             {/* Cucharón sopero profundo (Imagen 2) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-4 bg-slate-300" />
-              <div className="w-3.5 h-4 rounded-b-full bg-slate-400 border border-slate-200 shadow-sm" />
+              <div className="w-0.5 sm:w-1 h-4 sm:h-6 bg-slate-300" />
+              <div className="w-3.5 h-4 sm:w-5 sm:h-6 md:w-7 md:h-8 rounded-b-full bg-slate-400 border border-slate-200 shadow-sm" />
             </div>
 
             {/* Espátula perforada de chef (Imagen 2) */}
             <div className="flex flex-col items-center">
-              <div className="w-0.5 h-3 bg-slate-300" />
-              <div className="w-3 h-4 bg-slate-400 rounded-sm flex flex-col justify-evenly py-0.5">
-                <div className="w-2 h-0.5 bg-slate-700 mx-auto" />
-                <div className="w-2 h-0.5 bg-slate-700 mx-auto" />
+              <div className="w-0.5 sm:w-1 h-3 sm:h-5 bg-slate-300" />
+              <div className="w-3 h-4 sm:w-4.5 sm:h-6 md:w-6 md:h-8 bg-slate-400 rounded-sm flex flex-col justify-evenly py-0.5">
+                <div className="w-2 sm:w-3 h-0.5 bg-slate-700 mx-auto" />
+                <div className="w-2 sm:w-3 h-0.5 bg-slate-700 mx-auto" />
               </div>
             </div>
           </div>

@@ -480,7 +480,9 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
         <div
           className={`z-20 pointer-events-auto ${
             gameAspect === '9:16'
-              ? 'absolute inset-0 flex items-center justify-center p-2 sm:p-4'
+              ? isPreview
+                ? 'absolute inset-0 flex items-center justify-center p-2 sm:p-4'
+                : 'absolute inset-0 w-full h-full flex flex-col items-center justify-center p-0 overflow-hidden'
               : 'absolute inset-x-4 top-16 bottom-6 flex items-center justify-center'
           }`}
         >
@@ -602,8 +604,8 @@ export const ObsOverlayScreen: React.FC<ObsOverlayScreenProps> = ({ isPreview = 
         );
       })}
 
-      {/* Watermark helper in standalone OBS mode */}
-      {!isPreview && activeOverlays.length === 0 && (
+      {/* Watermark helper in standalone OBS mode (oculto si hay minijuego activo en pantalla completa) */}
+      {!isPreview && activeOverlays.length === 0 && activeGameId !== 'street_food_rush' && activeGameId !== 'boss_battle' && (
         <div className="absolute top-4 right-4 flex items-center gap-2 text-[11px] font-mono text-slate-500/60 bg-black/40 px-3 py-1.5 rounded-lg border border-slate-800/60">
           <Radio className="w-3.5 h-3.5 text-emerald-500" />
           <span>OBS Browser Source Activo · Esperando Eventos</span>

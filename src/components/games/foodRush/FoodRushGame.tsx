@@ -466,7 +466,9 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
     <div
       className={`relative select-none overflow-hidden flex flex-col justify-between ${
         isVertical
-          ? 'w-full max-w-[480px] aspect-[9/16] mx-auto bg-gradient-to-b from-[#0b0f19] via-[#111827] to-[#070a11] rounded-3xl border-2 border-slate-800/80 shadow-2xl'
+          ? isPreview
+            ? 'w-full max-w-[440px] max-h-full aspect-[9/16] mx-auto bg-gradient-to-b from-[#0b0f19] via-[#111827] to-[#070a11] rounded-2xl border-2 border-slate-800/80 shadow-2xl'
+            : 'obs-canvas-9-16 bg-gradient-to-b from-[#0b0f19] via-[#111827] to-[#070a11] rounded-none border-0 shadow-none'
           : 'w-full h-full min-h-[580px] bg-gradient-to-b from-[#0b0f19] via-[#111827] to-[#070a11] rounded-2xl border border-slate-800'
       }`}
     >
@@ -484,31 +486,31 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
               animation: 'floatUp 1.8s ease-out forwards',
             }}
           >
-            <Heart className="w-6 h-6 fill-rose-500 filter drop-shadow-[0_0_8px_#f43f5e]" />
+            <Heart className="w-6 h-6 sm:w-8 sm:h-8 fill-rose-500 filter drop-shadow-[0_0_8px_#f43f5e]" />
           </div>
         ))}
       </div>
 
       {/* BARRA SUPERIOR: META COMUNITARIA ("FIEBRE DE COCINA / RUSH HOUR") */}
-      <div className="relative z-30 px-3 py-1.5 bg-black/60 backdrop-blur-md border-b border-amber-500/30">
+      <div className="relative z-30 px-3 py-2 sm:px-6 sm:py-3 md:px-8 md:py-3.5 bg-black/60 backdrop-blur-md border-b border-amber-500/30">
         {isRushHour ? (
-          <div className="w-full flex items-center justify-between px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-500/30 border border-yellow-300 shadow-[0_0_15px_#facc15] animate-pulse text-amber-200">
-            <div className="flex items-center gap-2 font-black text-xs">
-              <span className="text-base animate-spin">✨</span>
+          <div className="w-full flex items-center justify-between px-3 py-1.5 sm:px-5 sm:py-2.5 md:px-6 md:py-3 rounded-xl md:rounded-2xl bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-500/30 border border-yellow-300 shadow-[0_0_15px_#facc15] animate-pulse text-amber-200">
+            <div className="flex items-center gap-2 md:gap-3 font-black text-xs sm:text-sm md:text-base lg:text-lg">
+              <span className="text-base sm:text-xl md:text-2xl animate-spin">✨</span>
               <span className="tracking-wider">¡FIEBRE DORADA ACTIVA · PUNTOS X2!</span>
             </div>
-            <div className="px-2 py-0.5 rounded bg-black/70 font-black text-yellow-300 border border-yellow-400/60 font-mono text-xs">
+            <div className="px-2.5 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 rounded-lg bg-black/70 font-black text-yellow-300 border border-yellow-400/60 font-mono text-xs sm:text-sm md:text-base">
               ⏱ {rushSecondsLeft}s
             </div>
           </div>
         ) : (
-          <div className="w-full flex items-center justify-between gap-2 text-xs font-mono">
-            <div className="flex items-center gap-1.5 font-bold text-amber-300 truncate">
-              <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span>Fiebre de Cocina:</span>
-              <span className="text-white font-black">{rushCoins} / {config.foodRush.rushHourGoalCoins || 50} 🪙</span>
+          <div className="w-full flex items-center justify-between gap-3 md:gap-4 text-xs sm:text-sm md:text-base font-mono">
+            <div className="flex items-center gap-2 md:gap-2.5 font-bold text-amber-300 truncate">
+              <Flame className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-amber-400 animate-pulse shrink-0" />
+              <span className="font-bold text-xs sm:text-sm md:text-base">Fiebre de Cocina:</span>
+              <span className="text-white font-black text-xs sm:text-sm md:text-base">{rushCoins} / {config.foodRush.rushHourGoalCoins || 50} 🪙</span>
             </div>
-            <div className="w-32 sm:w-40 h-2.5 rounded-full bg-slate-900 overflow-hidden border border-amber-500/40 shrink-0">
+            <div className="w-36 sm:w-56 md:w-72 lg:w-96 h-3 sm:h-3.5 md:h-4.5 rounded-full bg-slate-900 overflow-hidden border border-amber-500/40 shrink-0">
               <div
                 className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 transition-all duration-300 rounded-full"
                 style={{ width: `${Math.min(100, (rushCoins / (config.foodRush.rushHourGoalCoins || 50)) * 100)}%` }}
@@ -519,24 +521,24 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       </div>
 
       {/* TOP HEADER: Top 3 Best Customers Widget, Menu Toggle & Live Speed Gauge */}
-      <header className="relative z-20 p-3 flex items-start justify-between gap-2 border-b border-slate-800/60 bg-black/40 backdrop-blur-md">
+      <header className="relative z-20 p-3 sm:p-4 md:p-5 lg:p-6 flex items-start justify-between gap-2.5 sm:gap-4 md:gap-6 border-b border-slate-800/60 bg-black/40 backdrop-blur-md">
         {/* Top 3 Clientes del Día Widget */}
-        <div className="flex-1 max-w-[260px]">
-          <div className="flex items-center gap-1.5 text-xs font-black text-amber-300 mb-1">
-            <Trophy className="w-3.5 h-3.5 text-amber-400" />
+        <div className="flex-1 max-w-[280px] sm:max-w-[380px] md:max-w-[460px] lg:max-w-[540px]">
+          <div className="flex items-center gap-1.5 md:gap-2 text-xs sm:text-sm md:text-base font-black text-amber-300 mb-1 sm:mb-2">
+            <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-amber-400" />
             <span>Top Clientes del Día</span>
           </div>
 
           {top3.length === 0 ? (
-            <div className="text-[10px] text-slate-400 italic font-mono bg-slate-900/60 px-2 py-1 rounded border border-slate-800">
+            <div className="text-[10px] sm:text-xs md:text-sm text-slate-400 italic font-mono bg-slate-900/60 px-2 py-1 sm:px-2.5 sm:py-1.5 md:px-3 md:py-2 rounded-lg border border-slate-800">
               ¡Envía una Rosa o Corazón para el #1!
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1 sm:space-y-1.5 md:space-y-2">
               {top3.map((customer, idx) => (
                 <div
                   key={customer.username}
-                  className={`flex items-center justify-between text-[11px] px-2 py-0.5 rounded-lg border backdrop-blur-sm ${
+                  className={`flex items-center justify-between text-[11px] sm:text-xs md:text-sm px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border backdrop-blur-sm ${
                     idx === 0
                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
                       : idx === 1
@@ -544,24 +546,24 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
                       : 'bg-amber-900/20 border-amber-800/40 text-amber-400/90'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="font-mono font-bold text-[10px]">
+                  <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 truncate">
+                    <span className="font-mono font-bold text-[10px] sm:text-xs md:text-sm">
                       {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                     </span>
                     {customer.avatarUrl ? (
                       <img
                         src={customer.avatarUrl}
                         alt=""
-                        className="w-4 h-4 rounded-full object-cover border border-amber-400/40"
+                        className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 rounded-full object-cover border border-amber-400/40"
                       />
                     ) : (
-                      <div className="w-4 h-4 rounded-full bg-slate-800 text-[8px] flex items-center justify-center font-bold">
+                      <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 rounded-full bg-slate-800 text-[8px] sm:text-[9px] md:text-xs flex items-center justify-center font-bold">
                         {customer.username[0]?.toUpperCase()}
                       </div>
                     )}
-                    <span className="font-bold truncate max-w-[85px]">@{customer.username}</span>
+                    <span className="font-bold truncate max-w-[95px] sm:max-w-[160px] md:max-w-[220px] lg:max-w-[280px]">@{customer.username}</span>
                   </div>
-                  <span className="font-mono font-extrabold text-[10px] text-amber-300 tabular-nums">
+                  <span className="font-mono font-extrabold text-[10px] sm:text-xs md:text-sm text-amber-300 tabular-nums">
                     {customer.totalPoints.toLocaleString()} pts
                   </span>
                 </div>
@@ -571,31 +573,31 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         </div>
 
         {/* Speed / Likes Booster Gauge & Quick Actions */}
-        <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className="flex flex-col items-end gap-1 sm:gap-1.5 md:gap-2 shrink-0">
           <div
-            className={`px-2 py-1 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 shadow-sm ${
+            className={`px-2 py-1 sm:px-2.5 sm:py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border text-[10px] sm:text-xs md:text-sm font-mono font-bold flex items-center gap-1 md:gap-1.5 shadow-sm ${
               speedMultiplier > 1.2
                 ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 animate-pulse'
                 : 'bg-slate-900/80 border-slate-800 text-slate-300'
             }`}
           >
-            <Zap className={`w-3 h-3 ${speedMultiplier > 1.2 ? 'text-yellow-300 fill-yellow-300' : 'text-slate-400'}`} />
+            <Zap className={`w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 ${speedMultiplier > 1.2 ? 'text-yellow-300 fill-yellow-300' : 'text-slate-400'}`} />
             <span>
               {speedMultiplier > 1.2 ? `BOOST x${speedMultiplier.toFixed(1)}!` : 'Velocidad x1.0'}
             </span>
           </div>
 
           {/* Likes Progress */}
-          <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono">
-            <Heart className="w-2.5 h-2.5 text-rose-400" />
+          <div className="flex items-center gap-1 md:gap-1.5 text-[9px] sm:text-[10px] md:text-xs text-slate-400 font-mono">
+            <Heart className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 text-rose-400" />
             <span>Likes: {likesCount}/{config.foodRush.likesThreshold}</span>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2">
             {/* Botón interactivo para saludar / recibir boost de la ratita Remy */}
             <button
               onClick={handleRemyBoost}
-              className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-cyan-950/70 border border-cyan-500/50 text-cyan-300 hover:text-white transition-colors"
+              className="px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-3 md:py-1.5 rounded-lg text-[10px] sm:text-xs md:text-sm font-bold flex items-center gap-1 bg-cyan-950/70 border border-cyan-500/50 text-cyan-300 hover:text-white transition-colors"
               title="Saludar a Remy y activar boost culinario"
             >
               <span>🐀</span>
@@ -605,24 +607,24 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
             {/* Botón para alternar visibilidad de la Carta del Puesto */}
             <button
               onClick={() => setIsMenuOpen((prev) => !prev)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border ${
+              className={`px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-3 md:py-1.5 rounded-lg text-[10px] sm:text-xs md:text-sm font-bold flex items-center gap-1 transition-colors border ${
                 isMenuOpen
                   ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
                   : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-white'
               }`}
               title="Mostrar u ocultar Carta del Puesto en vivo"
             >
-              <ScrollText className="w-3 h-3" />
+              <ScrollText className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" />
               <span>Carta</span>
             </button>
 
             {/* Sound Toggle Button */}
             <button
               onClick={() => setSoundMuted((m) => !m)}
-              className="p-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700/60 text-[10px]"
+              className="p-1 sm:p-1.5 md:p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700/60 text-[10px] sm:text-xs"
               title={soundMuted ? 'Activar sonido del juego' : 'Silenciar juego'}
             >
-              {soundMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3 text-cyan-400" />}
+              {soundMuted ? <VolumeX className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> : <Volume2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 text-cyan-400" />}
             </button>
           </div>
         </div>
@@ -630,7 +632,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
 
       {/* CARTA EN PANTALLA: Pizarra / Menú de Pedidos Flotante */}
       {isMenuOpen && config.foodRush.menuDisplayMode !== 'hidden' && (
-        <div className="absolute top-20 right-3 z-30 max-w-[280px] sm:max-w-[320px] animate-in fade-in slide-in-from-top-4 duration-200">
+        <div className="absolute top-20 sm:top-24 md:top-28 right-3 sm:right-5 md:right-8 z-30 max-w-[280px] sm:max-w-[340px] md:max-w-[420px] animate-in fade-in slide-in-from-top-4 duration-200">
           <FoodMenuBoard
             initialExpanded={true}
             isVertical={isVertical}
@@ -642,8 +644,8 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
 
       {/* Comment cheer bubble popup if viewer cheered */}
       {recentCheer && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 max-w-[90%] animate-in fade-in zoom-in duration-150">
-          <div className="px-3 py-1.5 rounded-full bg-slate-950/90 border border-cyan-400/60 text-xs text-white shadow-xl flex items-center gap-2 backdrop-blur-md">
+        <div className="absolute top-24 sm:top-28 left-1/2 -translate-x-1/2 z-40 max-w-[90%] animate-in fade-in zoom-in duration-150">
+          <div className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-slate-950/90 border border-cyan-400/60 text-xs sm:text-sm text-white shadow-xl flex items-center gap-2 backdrop-blur-md">
             <span className="text-cyan-300 font-bold">💬 @{recentCheer.user}:</span>
             <span className="text-slate-200 truncate font-medium">"{recentCheer.text}"</span>
           </div>
@@ -651,7 +653,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       )}
 
       {/* MIDDLE ZONE: Chef Profesional Realista & Mesa de Preparación Culinaria */}
-      <div className="relative flex-1 flex flex-col justify-end items-center px-3 sm:px-4 pb-2 z-10 w-full">
+      <div className="relative flex-1 flex flex-col justify-end items-center px-3 sm:px-4 md:px-6 lg:px-8 pb-2 md:pb-4 z-10 w-full">
         <RealisticChefStation
           isCooking={isCooking}
           isVipFlame={isVipFlame}
@@ -667,15 +669,15 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       </div>
 
       {/* LOWER ZONE: Customer Line / Fila de Clientes & Order Queue */}
-      <div className="relative z-20 p-3 bg-slate-950/90 border-t border-slate-800/80 backdrop-blur-md">
+      <div className="relative z-20 p-3 sm:p-4 md:p-5 lg:p-6 bg-slate-950/90 border-t border-slate-800/80 backdrop-blur-md">
         {/* Queue Header & Counter */}
-        <div className="flex items-center justify-between text-xs mb-2">
-          <div className="flex items-center gap-1.5 font-bold text-slate-200">
-            <Users className="w-3.5 h-3.5 text-cyan-400" />
+        <div className="flex items-center justify-between text-xs sm:text-sm md:text-base mb-2 sm:mb-3">
+          <div className="flex items-center gap-1.5 md:gap-2 font-bold text-slate-200">
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-cyan-400" />
             <span>Fila de Clientes</span>
             <span className="text-slate-500 font-mono">({orderQueue.length} en espera)</span>
           </div>
-          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+          <div className="text-[10px] sm:text-xs md:text-sm text-slate-400 font-mono flex items-center gap-1.5">
             <span>🌹 Flor: Solo Jugo</span>
             <span>·</span>
             <span className="text-amber-300 font-bold">💖 Chaufa VIP</span>
@@ -683,19 +685,19 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         </div>
 
         {/* Visual Customer Waiting Queue (FIFO cards with avatar and username) */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none items-center min-h-[68px]">
+        <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-1 scrollbar-none items-center min-h-[68px] sm:min-h-[82px] md:min-h-[96px] lg:min-h-[108px]">
           {/* Active Serving/Finished order highlight */}
           {completedOrder && (
-            <div className="relative shrink-0 flex items-center gap-2 p-1.5 rounded-xl bg-amber-500/20 border-2 border-amber-400 animate-in zoom-in-90 duration-200 shadow-[0_0_15px_#f59e0b]">
-              <div className="w-9 h-9 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-sm">
+            <div className="relative shrink-0 flex items-center gap-2 md:gap-3 p-1.5 sm:p-2 md:p-2.5 rounded-xl md:rounded-2xl bg-amber-500/20 border-2 border-amber-400 animate-in zoom-in-90 duration-200 shadow-[0_0_15px_#f59e0b]">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 md:w-13 md:h-13 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-sm sm:text-base md:text-lg">
                 {completedOrder.dishEmoji}
               </div>
               <div className="flex flex-col pr-1">
-                <span className="text-[11px] font-extrabold text-amber-300">¡SERVIDO!</span>
-                <span className="text-[10px] font-bold text-white truncate max-w-[80px]">
+                <span className="text-[11px] sm:text-xs md:text-sm font-extrabold text-amber-300">¡SERVIDO!</span>
+                <span className="text-[10px] sm:text-xs md:text-sm font-bold text-white truncate max-w-[80px] sm:max-w-[120px] md:max-w-[160px]">
                   @{completedOrder.username}
                 </span>
-                <span className="text-[9px] font-mono text-emerald-400 font-bold">
+                <span className="text-[9px] sm:text-[10px] md:text-xs font-mono text-emerald-400 font-bold">
                   +{completedOrder.pointsEarned} pts
                 </span>
               </div>
@@ -705,7 +707,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
           {/* Cooking Order in front of line */}
           {currentOrder && (
             <div
-              className={`relative shrink-0 flex items-center gap-2 p-1.5 rounded-xl border-2 transition-all ${
+              className={`relative shrink-0 flex items-center gap-2 md:gap-3 p-1.5 sm:p-2 md:p-2.5 rounded-xl md:rounded-2xl border-2 transition-all ${
                 currentOrder.isVip
                   ? 'bg-amber-950/40 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
                   : 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
@@ -721,17 +723,17 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
               />
 
               {/* Customer Name & Order Info */}
-              <div className="flex flex-col pr-1 min-w-[70px] max-w-[100px]">
+              <div className="flex flex-col pr-1 min-w-[70px] sm:min-w-[100px] md:min-w-[130px] max-w-[100px] sm:max-w-[140px] md:max-w-[180px]">
                 <div className="flex items-center gap-1 truncate">
-                  <span className="text-[11px] font-bold text-white truncate">
+                  <span className="text-[11px] sm:text-xs md:text-sm font-bold text-white truncate">
                     @{currentOrder.username}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-amber-300 font-bold truncate">
+                <div className="flex items-center gap-1 text-[10px] sm:text-xs md:text-sm text-amber-300 font-bold truncate">
                   <span>{currentOrder.dishEmoji}</span>
                   <span className="truncate">{currentOrder.dishName}</span>
                 </div>
-                <span className="text-[9px] font-mono text-cyan-300 font-semibold">
+                <span className="text-[9px] sm:text-[10px] md:text-xs font-mono text-cyan-300 font-semibold">
                   Cocinando...
                 </span>
               </div>
@@ -740,21 +742,21 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
 
           {/* Queued Customers */}
           {orderQueue.length === 0 && !currentOrder && !completedOrder ? (
-            <div className="w-full py-2 text-center text-slate-500 text-xs italic font-mono">
+            <div className="w-full py-2 text-center text-slate-500 text-xs sm:text-sm italic font-mono">
               Esperando pedidos... ¡Manda una Flor o Corazón para pedir!
             </div>
           ) : (
             orderQueue.map((order, idx) => (
               <div
                 key={order.id}
-                className={`relative shrink-0 flex items-center gap-2 p-1.5 rounded-xl border backdrop-blur-sm ${
+                className={`relative shrink-0 flex items-center gap-2 md:gap-2.5 p-1.5 sm:p-2 md:p-2.5 rounded-xl md:rounded-2xl border backdrop-blur-sm ${
                   order.isVip
                     ? 'bg-amber-950/30 border-amber-500/50'
                     : 'bg-slate-900/80 border-slate-700/80'
                 }`}
               >
                 {/* Position # */}
-                <span className="text-[10px] font-mono font-bold text-slate-400 pl-0.5">
+                <span className="text-[10px] sm:text-xs md:text-sm font-mono font-bold text-slate-400 pl-0.5">
                   #{idx + 1}
                 </span>
 
@@ -767,11 +769,11 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
                 />
 
                 {/* Info */}
-                <div className="flex flex-col pr-1 min-w-[60px] max-w-[90px]">
-                  <span className="text-[10px] font-bold text-slate-200 truncate">
+                <div className="flex flex-col pr-1 min-w-[60px] sm:min-w-[80px] md:min-w-[110px] max-w-[90px] sm:max-w-[120px] md:max-w-[160px]">
+                  <span className="text-[10px] sm:text-xs md:text-sm font-bold text-slate-200 truncate">
                     @{order.username}
                   </span>
-                  <div className="flex items-center gap-0.5 text-[9px] text-amber-300 font-semibold truncate">
+                  <div className="flex items-center gap-0.5 text-[9px] sm:text-[10px] md:text-xs text-amber-300 font-semibold truncate">
                     <span>{order.dishEmoji}</span>
                     <span className="truncate">{order.dishName}</span>
                   </div>

@@ -123,13 +123,13 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       {/* ============================================================== */}
       {/* 1. ILUMINACIÓN AMBIENTAL DE COCINA Y RESPLANDOR DEL FOGÓN       */}
       {/* ============================================================== */}
-      <div className="absolute -top-16 inset-x-0 h-52 pointer-events-none flex justify-center">
+      <div className="absolute -top-16 inset-x-0 h-52 sm:h-64 md:h-80 pointer-events-none flex justify-center">
         {/* Foco de luz cálida de cocina de restaurante */}
-        <div className="w-80 h-48 bg-gradient-to-b from-amber-400/20 via-orange-500/10 to-transparent blur-3xl" />
+        <div className="w-80 h-48 sm:w-96 sm:h-60 md:w-[600px] md:h-[350px] lg:w-[750px] lg:h-[450px] bg-gradient-to-b from-amber-400/20 via-orange-500/10 to-transparent blur-3xl" />
         {/* Resplandor del fuego del fogón */}
         {isCooking && (
           <div
-            className={`absolute bottom-0 w-88 h-36 rounded-full blur-2xl transition-all duration-200 ${
+            className={`absolute bottom-0 w-88 h-36 sm:w-[450px] sm:h-44 md:w-[600px] md:h-56 rounded-full blur-2xl transition-all duration-200 ${
               isVipFlame
                 ? 'bg-gradient-to-t from-red-600/60 via-amber-500/50 to-yellow-300/30 animate-pulse'
                 : 'bg-gradient-to-t from-blue-600/30 via-amber-500/25 to-transparent'
@@ -139,14 +139,14 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       </div>
 
       {/* Sistema de Partículas Liviano Acelerado por GPU para Vapor, Chispas y Llamas */}
-      <div className="absolute inset-x-0 bottom-24 flex justify-center pointer-events-none z-30">
+      <div className="absolute inset-x-0 bottom-24 sm:bottom-28 md:bottom-36 flex justify-center pointer-events-none z-30">
         <KitchenParticleCanvas
           isCooking={isCooking}
           isVipFlame={isVipFlame}
           isRushHour={isRushHour}
           isFireEmergency={isFireEmergency}
           isServing={isServing}
-          className="w-72 h-44"
+          className="w-72 h-44 sm:w-88 sm:h-52 md:w-[450px] md:h-[260px] lg:w-[540px] lg:h-[320px]"
         />
       </div>
 
@@ -154,11 +154,11 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       {/* 2. FIEBRE DORADA / RUSH HOUR AURA                             */}
       {/* ============================================================== */}
       {isRushHour && (
-        <div className="absolute -top-24 inset-x-0 flex flex-col items-center pointer-events-none z-30">
-          <div className="px-3.5 py-1 rounded-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 border-2 border-white text-slate-950 font-black text-xs tracking-wider shadow-[0_0_24px_#facc15] animate-bounce flex items-center gap-1.5">
+        <div className="absolute -top-24 sm:-top-28 inset-x-0 flex flex-col items-center pointer-events-none z-30">
+          <div className="px-3.5 py-1 sm:px-5 sm:py-2 rounded-full bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 border-2 border-white text-slate-950 font-black text-xs sm:text-sm tracking-wider shadow-[0_0_24px_#facc15] animate-bounce flex items-center gap-1.5">
             <span>✨ FIEBRE DORADA DE CHEF · PUNTOS X2 ✨</span>
           </div>
-          <div className="w-88 h-40 bg-gradient-to-t from-yellow-400/40 via-amber-500/25 to-transparent blur-2xl rounded-full" />
+          <div className="w-88 h-40 sm:w-[450px] sm:h-48 bg-gradient-to-t from-yellow-400/40 via-amber-500/25 to-transparent blur-2xl rounded-full" />
         </div>
       )}
 
@@ -166,23 +166,23 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       {/* 3. EVENTO DE SABOTAJE: ¡COCINA EN LLAMAS!                       */}
       {/* ============================================================== */}
       {isFireEmergency && (
-        <div className="absolute -top-36 inset-x-2 z-40 flex flex-col items-center animate-in zoom-in-95 duration-150">
-          <div className="w-full max-w-sm p-3 rounded-2xl bg-black/95 border-2 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.9)] backdrop-blur-xl flex flex-col items-center gap-2">
-            <div className="flex items-center gap-2 text-red-400 font-black text-xs uppercase animate-pulse">
-              <span className="text-xl">🚨</span>
+        <div className="absolute -top-36 sm:-top-44 inset-x-2 z-40 flex flex-col items-center animate-in zoom-in-95 duration-150">
+          <div className="w-full max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl p-3 sm:p-4 md:p-5 rounded-2xl bg-black/95 border-2 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.9)] backdrop-blur-xl flex flex-col items-center gap-2 md:gap-3">
+            <div className="flex items-center gap-2 text-red-400 font-black text-xs sm:text-sm md:text-base uppercase animate-pulse">
+              <span className="text-xl sm:text-2xl">🚨</span>
               <span>¡EMERGENCIA: FUEGO EN LA COCINA!</span>
-              <span className="text-xl">🚨</span>
+              <span className="text-xl sm:text-2xl">🚨</span>
             </div>
-            <p className="text-[11px] text-slate-200 text-center font-medium">
+            <p className="text-[11px] sm:text-xs md:text-sm text-slate-200 text-center font-medium">
               ¡Remy y Linguini necesitan ayuda! Envíen <span className="text-cyan-300 font-bold">Likes</span> o regalos de <span className="text-cyan-300 font-bold">Bebida / Jugo</span> para apagar el fuego.
             </p>
             {/* Barra de extinción */}
-            <div className="w-full h-3 rounded-full bg-slate-900 border border-cyan-500/60 overflow-hidden relative shadow-inner">
+            <div className="w-full h-3 sm:h-4 md:h-5 rounded-full bg-slate-900 border border-cyan-500/60 overflow-hidden relative shadow-inner">
               <div
                 className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-teal-300 transition-all duration-150 rounded-full"
                 style={{ width: `${Math.min(100, (extinguishProgress / 30) * 100)}%` }}
               />
-              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold text-white drop-shadow">
+              <span className="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] md:text-xs font-mono font-bold text-white drop-shadow">
                 {Math.round((extinguishProgress / 30) * 100)}% Extinguido
               </span>
             </div>
@@ -194,9 +194,9 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       {/* 4. GLOBO DE DIÁLOGO DE LA RATITA REMY                           */}
       {/* ============================================================== */}
       {remySpeech && (
-        <div className="absolute -top-20 z-40 animate-in fade-in zoom-in-90 duration-150 pointer-events-none">
-          <div className="relative px-3 py-1.5 rounded-2xl bg-white text-slate-900 border-2 border-amber-400 shadow-[0_8px_20px_rgba(0,0,0,0.5)] flex items-center gap-1.5 font-bold text-xs">
-            <span className="text-sm">🐀</span>
+        <div className="absolute -top-20 sm:-top-24 z-40 animate-in fade-in zoom-in-90 duration-150 pointer-events-none">
+          <div className="relative px-3 py-1.5 sm:px-4 sm:py-2 md:px-5 md:py-2.5 rounded-2xl bg-white text-slate-900 border-2 border-amber-400 shadow-[0_8px_20px_rgba(0,0,0,0.5)] flex items-center gap-1.5 md:gap-2 font-bold text-xs sm:text-sm md:text-base">
+            <span className="text-sm sm:text-base md:text-xl">🐀</span>
             <span>{remySpeech}</span>
             {/* Triángulo inferior del bocadillo de cómic */}
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white" />
@@ -233,7 +233,7 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       >
         <svg
           viewBox="0 0 280 290"
-          className="w-64 h-68 sm:w-72 sm:h-76 filter drop-shadow-[0_16px_30px_rgba(0,0,0,0.85)]"
+          className="w-64 h-68 sm:w-80 sm:h-84 md:w-[380px] md:h-[400px] lg:w-[460px] lg:h-[480px] xl:w-[520px] xl:h-[540px] max-w-full filter drop-shadow-[0_16px_30px_rgba(0,0,0,0.85)]"
         >
           <defs>
             {/* Piel cálida con volumen de Linguini */}
@@ -677,79 +677,79 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
       {/* 6. MESA DE PREPARACIÓN GOURMET (Detalles de Imágenes 1 y 2)     */}
       {/* Acero inoxidable, tabla de corte con ajos, zanahorias y campana */}
       {/* ============================================================== */}
-      <div className="relative w-full z-20 -mt-10">
+      <div className="relative w-full z-20 -mt-10 sm:-mt-12 md:-mt-14 lg:-mt-16">
         {/* Superficie de la Mesa Gourmet de Trabajo */}
-        <div className="relative w-full rounded-2xl overflow-hidden border-2 border-slate-700/80 bg-gradient-to-b from-[#252a36] via-[#1a1e29] to-[#0f121a] shadow-[0_16px_36px_rgba(0,0,0,0.95)]">
+        <div className="relative w-full rounded-2xl md:rounded-3xl overflow-hidden border-2 border-slate-700/80 bg-gradient-to-b from-[#252a36] via-[#1a1e29] to-[#0f121a] shadow-[0_16px_36px_rgba(0,0,0,0.95)]">
           {/* Brillo biselado del borde de acero inoxidable */}
-          <div className="h-1 w-full bg-gradient-to-r from-slate-500 via-slate-200 to-slate-500 opacity-80" />
+          <div className="h-1 md:h-1.5 w-full bg-gradient-to-r from-slate-500 via-slate-200 to-slate-500 opacity-80" />
 
           {/* BANDEJA DE PREPARACIÓN CULINARIA EN VIVO (Mise en Place) */}
-          <div className="p-3 sm:p-4 grid grid-cols-12 gap-2 sm:gap-3 items-center">
+          <div className="p-3 sm:p-4 md:p-5 lg:p-6 grid grid-cols-12 gap-2 sm:gap-3 md:gap-4 items-center">
             {/* SECTOR 1 (IZQUIERDO): Tabla de corte con ajos, zanahorias, cebollinos y huevos (Imagen 1) */}
-            <div className="col-span-4 flex flex-col gap-1.5">
-              <div className="text-[10px] font-black text-amber-300 font-mono tracking-wider flex items-center justify-between">
+            <div className="col-span-4 flex flex-col gap-1.5 md:gap-2">
+              <div className="text-[10px] sm:text-xs md:text-sm font-black text-amber-300 font-mono tracking-wider flex items-center justify-between">
                 <span>🔪 PREP DE MESA</span>
-                <span className="text-[8px] text-slate-400">Mise en place</span>
+                <span className="text-[8px] sm:text-[10px] md:text-xs text-slate-400">Mise en place</span>
               </div>
 
               {/* Tabla de picar de madera de olivo con ingredientes frescos */}
-              <div className="relative h-20 sm:h-22 rounded-xl bg-gradient-to-r from-[#6b4226] via-[#855230] to-[#5a361e] p-2 border border-[#a86e42] shadow-inner flex flex-col justify-between overflow-hidden">
+              <div className="relative h-20 sm:h-24 md:h-28 lg:h-32 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#6b4226] via-[#855230] to-[#5a361e] p-2 sm:p-2.5 md:p-3 border border-[#a86e42] shadow-inner flex flex-col justify-between overflow-hidden">
                 {/* Vetas de madera realista */}
                 <div className="absolute inset-0 opacity-15 pointer-events-none bg-[repeating-linear-gradient(90deg,_transparent,_transparent_8px,_rgba(0,0,0,0.4)_9px)]" />
 
                 {/* Ingredientes frescos sobre la tabla (Imagen 1 y 2) */}
-                <div className="relative z-10 flex items-center gap-1.5 flex-wrap">
+                <div className="relative z-10 flex items-center gap-1.5 sm:gap-2 flex-wrap">
                   {/* Diente de ajo pelado blanco (Imagen 1) */}
-                  <span className="w-3 h-3 rounded-full bg-slate-100 border border-slate-300 shadow-sm inline-block" title="Ajo fresco" />
+                  <span className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 rounded-full bg-slate-100 border border-slate-300 shadow-sm inline-block" title="Ajo fresco" />
                   {/* Rodajas de zanahoria naranja vivo (Imagen 1) */}
-                  <div className="flex gap-0.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-orange-500 border border-amber-300" title="Zanahoria" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-orange-600 border border-amber-300" />
+                  <div className="flex gap-0.5 sm:gap-1">
+                    <span className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 rounded-full bg-orange-500 border border-amber-300" title="Zanahoria" />
+                    <span className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 rounded-full bg-orange-600 border border-amber-300" />
                   </div>
                   {/* Cebollinos verdes picados (Imagen 1) */}
-                  <div className="flex gap-0.5">
-                    <span className="w-2 h-2 rounded-xs bg-emerald-500" />
-                    <span className="w-1.5 h-1.5 rounded-xs bg-emerald-400" />
+                  <div className="flex gap-0.5 sm:gap-1">
+                    <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-emerald-500" />
+                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-xs bg-emerald-400" />
                   </div>
                   {/* Berenjena y tomate fresco (Imagen 2) */}
-                  <span className="w-3.5 h-2.5 rounded-full bg-purple-900 border border-purple-700" title="Berenjena" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 border border-red-400" title="Tomate" />
+                  <span className="w-3.5 h-2.5 sm:w-5 sm:h-3.5 md:w-6 md:h-4 rounded-full bg-purple-900 border border-purple-700" title="Berenjena" />
+                  <span className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 rounded-full bg-red-600 border border-red-400" title="Tomate" />
                 </div>
 
                 {/* Cuchillo de Chef profesional apoyado sobre la tabla */}
                 <div className="relative z-10 flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    <div className="w-10 sm:w-14 h-3 bg-gradient-to-r from-slate-200 via-white to-slate-400 rounded-l-sm shadow-md border-r-2 border-slate-900" />
-                    <div className="w-4 h-2 bg-black rounded-r-sm" />
+                    <div className="w-10 sm:w-16 md:w-20 lg:w-24 h-3 sm:h-3.5 md:h-4 lg:h-5 bg-gradient-to-r from-slate-200 via-white to-slate-400 rounded-l-sm shadow-md border-r-2 border-slate-900" />
+                    <div className="w-4 sm:w-5 md:w-6 h-2 sm:h-2.5 md:h-3 bg-black rounded-r-sm" />
                   </div>
                   {/* Cuenco pequeño con huevos frescos (Imagen 1) */}
-                  <div className="flex items-center gap-0.5 bg-rose-900/60 px-1 py-0.5 rounded border border-rose-700">
-                    <span className="w-2 h-2.5 rounded-full bg-amber-100" />
-                    <span className="w-2 h-2.5 rounded-full bg-amber-200" />
+                  <div className="flex items-center gap-0.5 bg-rose-900/60 px-1 py-0.5 sm:px-1.5 sm:py-1 rounded border border-rose-700">
+                    <span className="w-2 h-2.5 sm:w-2.5 sm:h-3 md:w-3 md:h-3.5 rounded-full bg-amber-100" />
+                    <span className="w-2 h-2.5 sm:w-2.5 sm:h-3 md:w-3 md:h-3.5 rounded-full bg-amber-200" />
                   </div>
                 </div>
               </div>
 
               {/* Botellas de aceite y condimentos de cocina */}
-              <div className="flex items-center gap-1.5 pt-0.5">
-                <div className="w-4 h-7 rounded-t-md bg-gradient-to-b from-emerald-800 to-black border border-emerald-600 flex flex-col items-center shadow-sm" title="Aceite de Oliva Virgen">
+              <div className="flex items-center gap-1.5 sm:gap-2 pt-0.5">
+                <div className="w-4 h-7 sm:w-5 sm:h-8 md:w-6 md:h-10 rounded-t-md bg-gradient-to-b from-emerald-800 to-black border border-emerald-600 flex flex-col items-center shadow-sm" title="Aceite de Oliva Virgen">
                   <div className="w-1 h-2 bg-slate-200 rounded-t-xs -mt-1" />
                 </div>
-                <div className="w-4 h-6 rounded-t-md bg-gradient-to-b from-rose-900 to-black border border-rose-800 flex flex-col items-center shadow-sm" title="Vinagre Balsámico">
+                <div className="w-4 h-6 sm:w-5 sm:h-7 md:w-6 md:h-9 rounded-t-md bg-gradient-to-b from-rose-900 to-black border border-rose-800 flex flex-col items-center shadow-sm" title="Vinagre Balsámico">
                   <div className="w-1 h-2 bg-amber-200 rounded-t-xs -mt-1" />
                 </div>
-                <div className="w-5 h-4 rounded-md bg-slate-300 border border-slate-400 shadow-sm" title="Sal Marina" />
-                <div className="w-5 h-4 rounded-md bg-amber-900 border border-amber-700 shadow-sm" title="Pimienta Negra" />
+                <div className="w-5 h-4 sm:w-6 sm:h-5 md:w-7 md:h-6 rounded-md bg-slate-300 border border-slate-400 shadow-sm" title="Sal Marina" />
+                <div className="w-5 h-4 sm:w-6 sm:h-5 md:w-7 md:h-6 rounded-md bg-amber-900 border border-amber-700 shadow-sm" title="Pimienta Negra" />
               </div>
             </div>
 
             {/* SECTOR 2 (CENTRAL): Comanda activa del espectador y progreso de cocción */}
             <div className="col-span-5 flex flex-col items-center justify-center px-1">
               {currentDish ? (
-                <div className="w-full flex flex-col items-center gap-2">
+                <div className="w-full flex flex-col items-center gap-2 md:gap-3">
                   {/* Ticket comanda con avatar del espectador */}
-                  <div className="w-full p-2 rounded-xl bg-slate-950/90 border border-amber-500/50 backdrop-blur-md shadow-xl flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-full p-2 sm:p-2.5 md:p-3 lg:p-4 rounded-xl md:rounded-2xl bg-slate-950/90 border border-amber-500/50 backdrop-blur-md shadow-xl flex items-center justify-between gap-2 md:gap-3">
+                    <div className="flex items-center gap-2 md:gap-3 min-w-0">
                       <CustomerAvatar
                         avatarUrl={currentDish.avatarUrl}
                         username={currentDish.username}
@@ -758,34 +758,34 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
                       />
 
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[11px] font-extrabold text-white truncate">
+                        <span className="text-[11px] sm:text-xs md:text-sm lg:text-base font-extrabold text-white truncate">
                           @{currentDish.username}
                         </span>
-                        <div className="flex items-center gap-1 text-[10px] text-amber-300 font-bold truncate">
-                          <span>{currentDish.dishEmoji}</span>
+                        <div className="flex items-center gap-1 text-[10px] sm:text-xs md:text-sm text-amber-300 font-bold truncate">
+                          <span className="text-xs sm:text-sm md:text-base">{currentDish.dishEmoji}</span>
                           <span className="truncate">{currentDish.dishName}</span>
                         </div>
                       </div>
                     </div>
 
                     {currentDish.isVip && (
-                      <span className="px-1.5 py-0.5 rounded bg-red-600/30 border border-red-500/80 text-[8px] font-black text-red-300 shrink-0">
+                      <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded bg-red-600/30 border border-red-500/80 text-[8px] sm:text-[10px] md:text-xs font-black text-red-300 shrink-0">
                         VIP
                       </span>
                     )}
                   </div>
 
                   {/* Barra de progreso de preparación culinaria */}
-                  <div className="w-full space-y-1">
-                    <div className="flex items-center justify-between text-[9px] font-mono text-slate-300">
+                  <div className="w-full space-y-1 sm:space-y-1.5">
+                    <div className="flex items-center justify-between text-[9px] sm:text-[11px] md:text-xs lg:text-sm font-mono text-slate-300">
                       <span className="flex items-center gap-1 text-cyan-300 font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                        <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-cyan-400 animate-ping" />
                         Cocinando en olla gourmet...
                       </span>
                       <span className="text-amber-400 font-bold">{Math.round(currentDish.cookProgress)}%</span>
                     </div>
 
-                    <div className="w-full h-2 rounded-full bg-slate-950 border border-slate-700/80 overflow-hidden relative">
+                    <div className="w-full h-2 sm:h-2.5 md:h-3.5 lg:h-4 rounded-full bg-slate-950 border border-slate-700/80 overflow-hidden relative shadow-inner">
                       <div
                         className={`h-full transition-all duration-100 rounded-full ${
                           currentDish.isVip
@@ -799,11 +799,11 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
                 </div>
               ) : (
                 /* Estado en reposo: Caldo listo a fuego lento */
-                <div className="flex flex-col items-center justify-center py-2 text-center">
-                  <div className="flex items-center gap-1 text-amber-400 text-xs font-black mb-1 animate-pulse">
+                <div className="flex flex-col items-center justify-center py-2 md:py-3 text-center">
+                  <div className="flex items-center gap-1 text-amber-400 text-xs sm:text-sm md:text-base font-black mb-1 animate-pulse">
                     <span>🍲 CALDO GOURMET A FUEGO LENTO</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-[10px] sm:text-xs md:text-sm text-slate-400 font-mono">
                     Linguini y Remy listos · Esperando orden de TikTok
                   </span>
                 </div>
@@ -820,14 +820,14 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
                 title="Campana de Servicio Cloche"
               >
                 {/* Asa esférica de la campana */}
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-400 shadow-sm -mb-0.5" />
+                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full bg-slate-300 border border-slate-400 shadow-sm -mb-0.5" />
                 {/* Cúpula plateada brillante */}
-                <div className="w-12 h-6 rounded-t-full bg-gradient-to-r from-slate-400 via-white to-slate-400 border border-slate-300 shadow-md relative">
+                <div className="w-12 h-6 sm:w-16 sm:h-8 md:w-20 md:h-10 lg:w-24 lg:h-12 rounded-t-full bg-gradient-to-r from-slate-400 via-white to-slate-400 border border-slate-300 shadow-md relative">
                   <div className="absolute inset-x-2 top-1 h-1 rounded-full bg-white/70 blur-[0.5px]" />
                 </div>
                 {/* Plato base plateado */}
-                <div className="w-14 h-1.5 rounded-full bg-slate-400 border border-slate-300 -mt-0.5 shadow-sm" />
-                <span className="text-[8px] font-black font-mono text-slate-300 mt-0.5">
+                <div className="w-14 h-1.5 sm:w-18 sm:h-2 md:w-22 md:h-2.5 lg:w-26 lg:h-3 rounded-full bg-slate-400 border border-slate-300 -mt-0.5 shadow-sm" />
+                <span className="text-[8px] sm:text-[10px] md:text-xs font-black font-mono text-slate-300 mt-0.5">
                   {isServing ? '¡PLATO LISTO!' : 'CLOCHE'}
                 </span>
               </div>
@@ -836,7 +836,7 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
               <button
                 type="button"
                 onClick={handleRemyInteraction}
-                className="w-full py-1 px-1.5 rounded-lg bg-gradient-to-r from-cyan-950 to-slate-900 border border-cyan-500/50 hover:border-cyan-300 text-[9px] font-bold text-cyan-300 hover:text-white transition-all shadow-sm flex items-center justify-center gap-1 active:scale-95"
+                className="w-full py-1 sm:py-1.5 md:py-2 px-1.5 sm:px-2 md:px-3 rounded-lg md:rounded-xl bg-gradient-to-r from-cyan-950 to-slate-900 border border-cyan-500/50 hover:border-cyan-300 text-[9px] sm:text-xs md:text-sm font-bold text-cyan-300 hover:text-white transition-all shadow-sm flex items-center justify-center gap-1 active:scale-95"
                 title="Toca a Remy para recibir ánimo y un boost"
               >
                 <span>🐀</span>
@@ -846,9 +846,9 @@ export const RealisticChefStation: React.FC<RealisticChefStationProps> = ({
           </div>
 
           {/* BARRA INFERIOR DE LA MESA: Indicador de la Función Activa de Remy */}
-          <div className="bg-[#10131a] border-t border-slate-800 px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+          <div className="bg-[#10131a] border-t border-slate-800 px-3 py-1.5 sm:px-4 sm:py-2 md:px-5 md:py-2.5 flex items-center justify-between text-[10px] sm:text-xs md:text-sm font-mono text-slate-400">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="font-bold text-slate-200">
                 Mesa de Salteado en Vivo · {remyCurrentRole}
               </span>
