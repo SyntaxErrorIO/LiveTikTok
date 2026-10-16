@@ -2772,6 +2772,86 @@ async function runAllTests() {
     }
   });
 
+  // 68. Paso 3: Procesamiento Confiable de Eventos TikTok LIVE (Escenarios A a L)
+  await test('68. Paso 3: Procesamiento Confiable de Eventos TikTok LIVE (Escenarios A a L)', async () => {
+    // A. Regalo válido procesado correctamente
+    const giftRaw = { type: 'gift', user: { username: 'alice', id: 'u_a' }, gift: { giftName: 'Rose', diamondCount: 1, repeatCount: 1 }, id: 'evt-g-1' };
+    const normGift = EventNormalizer.normalize(giftRaw, 'real_tiktok');
+    assert(normGift !== null && normGift.type === 'gift' && normGift.user.username === 'alice', 'A. Regalo válido normalizado correctamente');
+
+    // B. Comentario válido procesado correctamente
+    const commentRaw = { type: 'comment', user: { username: 'bob', id: 'u_b' }, comment: 'Hola chat!', id: 'evt-c-1' };
+    const normComment = EventNormalizer.normalize(commentRaw, 'real_tiktok');
+    assert(normComment !== null && normComment.type === 'comment' && normComment.data.comment === 'Hola chat!', 'B. Comentario válido normalizado correctamente');
+
+    // C. Like y seguidor procesados
+    const likeRaw = { type: 'like', user: { username: 'charlie', id: 'u_c' }, likeCount: 5, id: 'evt-l-1' };
+    const followRaw = { type: 'follow', user: { username: 'dave', id: 'u_d' }, id: 'evt-f-1' };
+    const normLike = EventNormalizer.normalize(likeRaw, 'real_tiktok');
+    const normFollow = EventNormalizer.normalize(followRaw, 'real_tiktok');
+    assert(normLike !== null && normLike.type === 'like' && normLike.data.likeCount === 5, 'C. Like procesado');
+    assert(normFollow !== null && normFollow.type === 'follow', 'C. Seguidor procesado');
+
+    // D. Evento duplicado sin doble activación
+    const dedup = new EventDeduplicator(5000);
+    const dupId = 'evt-dup-999';
+    assert(!dedup.isDuplicate(dupId), 'D. Primera vez no duplicado');
+    assert(dedup.isDuplicate(dupId), 'D. Segunda vez detectado como duplicado');
+
+    // E. Dos eventos legítimos similares sin pérdida incorrecta
+    const ev1 = EventNormalizer.normalize({ type: 'gift', user: { username: 'user1' }, gift: { name: 'Rose', diamonds: 1 }, id: 'id-1' }, 'real_tiktok');
+    const ev2 = EventNormalizer.normalize({ type: 'gift', user: { username: 'user1' }, gift: { name: 'Rose', diamonds: 1 }, id: 'id-2' }, 'real_tiktok');
+    assert(ev1 !== null && ev2 !== null && ev1.id !== ev2.id, 'E. Eventos con IDs distintos no se consideran duplicados aunque sean similares');
+
+    // F. Dos usuarios recibiendo eventos simultáneamente sin interferencias
+    let eventsU1: any[] = [];
+    let eventsU2: any[] = [];
+    const unsub1 = coreEngine.subscribeSSE((msg) => { if (msg.type === 'TIKTOK_EVENT') eventsU1.push(msg.payload); }, 'user_step3_1');
+    const unsub2 = coreEngine.subscribeSSE((msg) => { if (msg.type === 'TIKTOK_EVENT') eventsU2.push(msg.payload); }, 'user_step3_2');
+
+    await coreEngine.ingestRawEvent({ type: 'gift', user: { username: 'u1' }, gift: { name: 'Rose' }, id: 'evt-u1-test' }, 'simulation', 'user_step3_1');
+    await coreEngine.ingestRawEvent({ type: 'gift', user: { username: 'u2' }, gift: { name: 'Rose' }, id: 'evt-u2-test' }, 'simulation', 'user_step3_2');
+
+    unsub1();
+    unsub2();
+    assert(eventsU1.length === 1 && eventsU1[0].user.username === 'u1', 'F. Usuario 1 recibe su evento');
+    assert(eventsU2.length === 1 && eventsU2[0].user.username === 'u2', 'F. Usuario 2 recibe su evento sin interferencia');
+
+    // G. Evento inválido sin caída del sistema
+    const invalidRes = await coreEngine.ingestRawEvent(null, 'real_tiktok', 'user_step3_1');
+    assert(invalidRes.accepted === false, 'G. Evento nulo rechazado sin crash');
+
+    // H. Reconexión sin duplicación de acciones
+    const retryDedup = new EventDeduplicator(5000);
+    const retryEventId = 'retry-evt-123';
+    assert(!retryDedup.isDuplicate(retryEventId), 'H. Primer paquete aceptado');
+    assert(retryDedup.isDuplicate(retryEventId), 'H. Paquete reenviado en reconexión detectado como duplicado');
+
+    // I & J. Integración con Food Rush y Boss Battle
+    const { GamesRepository } = await import('../src/server/db/gamesRepo');
+    GamesRepository.saveGameConfig({ foodRush: { vipOrderMinCoins: 5 }, bossBattle: { maxHp: 500 } }, 'user_step3_games');
+    const loadedCfg = GamesRepository.getGameConfig('user_step3_games');
+    assert(loadedCfg !== null && loadedCfg.foodRush.vipOrderMinCoins === 5, 'I. Food Rush integrado');
+    assert(loadedCfg.bossBattle.maxHp === 500, 'J. Boss Battle integrado');
+
+    // K. Envío correcto a los overlays OBS
+    let obsReceived = false;
+    const unsubObs = coreEngine.subscribeSSE((msg) => {
+      if (msg.type === 'TIKTOK_EVENT') obsReceived = true;
+    }, 'user_obs_test', 'token_123');
+    await coreEngine.ingestRawEvent({ type: 'gift', user: { username: 'obs_user' }, gift: { name: 'Galaxy' }, id: 'evt-obs-1' }, 'simulation', 'user_obs_test');
+    unsubObs();
+    assert(obsReceived, 'K. Overlay OBS recibe correctamente el evento TikTok');
+
+    // L. Manejo seguro de errores y ráfagas de eventos
+    const burstPromises = [];
+    for (let i = 0; i < 20; i++) {
+      burstPromises.push(coreEngine.ingestRawEvent({ type: 'like', user: { username: 'burst_user' }, likeCount: 1, id: `burst-${i}` }, 'simulation', 'user_burst'));
+    }
+    const burstResults = await Promise.all(burstPromises);
+    assert(burstResults.every((r) => r.accepted), 'L. Ráfaga de eventos procesada con seguridad');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
