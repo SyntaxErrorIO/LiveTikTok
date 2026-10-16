@@ -2682,6 +2682,96 @@ async function runAllTests() {
     }
   });
 
+  // 67. Validación Exhaustiva Paso 2: Liberación completa de listeners con contadores independientes y rechazo estricto de eventos obsoletos
+  await test('67. Validación Exhaustiva Paso 2: Liberación completa de listeners con contadores independientes y rechazo estricto de eventos obsoletos', async () => {
+    const { ConnectorManager } = await import('../src/server/engine/connectorManager');
+    const { TikTokConnectorFactory } = await import('../src/server/connectors/connectorFactory');
+    const { StateStore } = await import('../src/server/stateStore');
+
+    let eventUnsubCount = 0;
+    let statusUnsubCount = 0;
+    let eventHandlerCb: any = null;
+    let statusHandlerCb: any = null;
+
+    const mockConn1 = {
+      mode: 'simulation' as const,
+      connect: async () => true,
+      disconnect: () => {},
+      onEvent: (cb: any) => {
+        eventHandlerCb = cb;
+        return () => { eventUnsubCount++; };
+      },
+      onStatusChange: (cb: any) => {
+        statusHandlerCb = cb;
+        return () => { statusUnsubCount++; };
+      },
+      testLatency: async () => 10,
+    };
+
+    let eventUnsubCount2 = 0;
+    let statusUnsubCount2 = 0;
+    let eventHandlerCb2: any = null;
+    let statusHandlerCb2: any = null;
+
+    const mockConn2 = {
+      mode: 'simulation' as const,
+      connect: async () => true,
+      disconnect: () => {},
+      onEvent: (cb: any) => {
+        eventHandlerCb2 = cb;
+        return () => { eventUnsubCount2++; };
+      },
+      onStatusChange: (cb: any) => {
+        statusHandlerCb2 = cb;
+        return () => { statusUnsubCount2++; };
+      },
+      testLatency: async () => 10,
+    };
+
+    let instCount = 0;
+    const origCreate = TikTokConnectorFactory.createConnector;
+    (TikTokConnectorFactory as any).createConnector = () => {
+      instCount++;
+      return instCount === 1 ? mockConn1 : mockConn2;
+    };
+
+    try {
+      const manager = new ConnectorManager();
+      let receivedEvents1: any[] = [];
+      let receivedEvents2: any[] = [];
+
+      await manager.connect('user_audit', (ev) => { receivedEvents1.push(ev); }, () => {});
+      assert(eventUnsubCount === 0 && statusUnsubCount === 0, 'Listeners de conector 1 activos');
+
+      await manager.connect('user_audit', (ev) => { receivedEvents2.push(ev); }, () => {});
+      assert(eventUnsubCount === 1, 'onEvent de conector 1 desuscripto');
+      assert(statusUnsubCount === 1, 'onStatusChange de conector 1 desuscripto');
+      assert(eventUnsubCount2 === 0 && statusUnsubCount2 === 0, 'Listeners de conector 2 activos');
+
+      if (eventHandlerCb) {
+        eventHandlerCb({ type: 'gift', gift: 'rose', user: 'obsolete_user' });
+      }
+      if (statusHandlerCb) {
+        statusHandlerCb({ status: 'connected', viewerCount: 9999 });
+      }
+
+      assert(receivedEvents1.length === 0, 'Eventos de conector obsoleto 1 ignorados');
+      const userState = StateStore.getConnection('user_audit');
+      assert(userState.viewerCount !== 9999, 'Estado obsoleto no sobrescribe StateStore');
+
+      if (eventHandlerCb2) {
+        eventHandlerCb2({ type: 'gift', gift: 'lion', user: 'active_user' });
+      }
+      assert(receivedEvents2.length === 1 && receivedEvents2[0].gift === 'lion', 'Conector 2 procesa eventos');
+
+      manager.disconnect('user_audit', () => {});
+      assert(eventUnsubCount2 === 1 && statusUnsubCount2 === 1, 'Desconexión manual libera listeners de conector 2');
+      assert(StateStore.getConnection('user_audit').desiredConnected === false, 'desiredConnected es false');
+    } finally {
+      (TikTokConnectorFactory as any).createConnector = origCreate;
+    }
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
