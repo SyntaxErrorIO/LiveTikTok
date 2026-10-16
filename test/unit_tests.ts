@@ -2950,13 +2950,59 @@ async function runAllTests() {
     assert(obsReceivedPayload.data.diamondCount === 500, 'Los diamantes en OBS coinciden');
   });
 
-  // 71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates
-  await test('71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates', async () => {
-    const { processFoodRushEvent } = await import('../src/components/games/foodRush/foodRushLogic');
-    const { processBossBattleEvent } = await import('../src/components/games/bossBattle/bossBattleLogic');
+  // 71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates con Reglas Oficiales de Producción
+  await test('71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates con Reglas Oficiales de Producción', async () => {
+    const {
+      processFoodRushEvent,
+      selectDishForGift,
+      calculateFoodRushPoints,
+      calculateCookDurationMs,
+      updateCustomerLeaderboard,
+    } = await import('../src/components/games/foodRush/foodRushLogic');
+    const {
+      processBossBattleEvent,
+      calculateGiftDamage,
+      applyUserCombo,
+    } = await import('../src/components/games/bossBattle/bossBattleLogic');
 
-    // 1. Food Rush State Update
-    const initialFoodState = { rushCoins: 10, isFireEmergency: false, extinguishProgress: 0, orderQueueCount: 0 };
+    // 1. Food Rush: Selección de platos oficial según regalo y diamantes
+    const dishRosa = selectDishForGift('Rosa', 1, false, 'peruvian_sazon');
+    assert(dishRosa.points === 15, 'Food Rush: Rosa (1 moneda) debe otorgar plato rápido de 15 pts');
+
+    const dishCorazon = selectDishForGift('Corazón', 5, true, 'peruvian_sazon');
+    assert(dishCorazon.points === 65 && dishCorazon.category === 'vip', 'Food Rush: Corazón (5 monedas) debe otorgar plato VIP de 65 pts');
+
+    const dishLeon = selectDishForGift('León', 50, true, 'peruvian_sazon');
+    assert(dishLeon.points === 100, 'Food Rush: León (50 monedas) debe otorgar plato de 100 pts');
+
+    // Cálculo de duración de cocción oficial: 8s base + 3s por tier (totalDiamonds / 3)
+    const duration1Coin = calculateCookDurationMs(1);
+    const duration6Coins = calculateCookDurationMs(6);
+    assert(duration1Coin === 8000, 'Food Rush: Duración para 1 moneda debe ser 8000ms');
+    assert(duration6Coins === 14000, 'Food Rush: Duración para 6 monedas debe ser 14000ms (8s + 2*3s)');
+
+    // Cálculo de puntos: Normal vs Rush Hour (duplica x2)
+    const pointsNormal = calculateFoodRushPoints(15, 1, false, false);
+    const pointsRush = calculateFoodRushPoints(15, 1, false, true);
+    assert(pointsNormal === 17, 'Food Rush: Puntos normales para plato 15pts con 1 diamante (15 + 2 = 17)');
+    assert(pointsRush === 34, 'Food Rush: Puntos en Fiebre Dorada se duplican (17 * 2 = 34)');
+
+    // Actualización de estado en Food Rush
+    const initialFoodState = {
+      orderQueue: [],
+      rushCoins: 10,
+      rushHourActiveUntil: 0,
+      isFireEmergency: false,
+      extinguishProgress: 0,
+      speedMultiplier: 1.0,
+      likesCount: 0,
+      boostActiveUntil: 0,
+      recentCheer: null,
+      topCustomers: [],
+      orderQueueCount: 0,
+      processedEventIds: [],
+    };
+
     const giftFoodEvt = EventNormalizer.normalize({
       type: 'gift',
       user: { username: 'gamer1', id: 'u1' },
@@ -2966,7 +3012,8 @@ async function runAllTests() {
 
     const nextFoodState = processFoodRushEvent(giftFoodEvt, initialFoodState, 100);
     assert(nextFoodState.rushCoins === 30, 'Food Rush: Las monedas acumuladas aumentan en 20');
-    assert(nextFoodState.orderQueueCount === 1, 'Food Rush: La cola de pedidos incrementa');
+    assert(nextFoodState.orderQueue.length === 1, 'Food Rush: La cola de pedidos incrementa');
+    assert(nextFoodState.orderQueueCount === 1, 'Food Rush: orderQueueCount refleja 1');
 
     // Sabotaje Fuego
     const fireEvt = EventNormalizer.normalize({
@@ -2978,8 +3025,45 @@ async function runAllTests() {
     const fireState = processFoodRushEvent(fireEvt, nextFoodState, 100);
     assert(fireState.isFireEmergency === true, 'Food Rush: Regalo de fuego activa la emergencia de incendio');
 
-    // 2. Boss Battle State Update
-    const initialBossState = { bossHp: 1000, maxHp: 1000, shield: 30, heroes: [] };
+    // Apagar fuego con Bebida / Agua
+    const waterEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'heroe_agua', id: 'u3' },
+      gift: { giftName: 'Agua mineral helada', diamondCount: 1, repeatCount: 3 },
+      id: 'fr-3',
+    }, 'real_tiktok')!;
+    const extinguishedState = processFoodRushEvent(waterEvt, fireState, 100);
+    assert(extinguishedState.extinguishProgress >= 12, 'Food Rush: Regalo de agua incrementa progreso de extinción');
+
+    // 2. Boss Battle: Tiers oficiales de daño de regalos
+    const dmg50 = calculateGiftDamage(50);
+    const dmg15 = calculateGiftDamage(15);
+    const dmg5 = calculateGiftDamage(5);
+    const dmg1 = calculateGiftDamage(1);
+    assert(dmg50.baseDamage === 600 && dmg50.isCrit, 'Boss Battle: 50+ monedas = 600 dmg crítico');
+    assert(dmg15.baseDamage === 250 && dmg15.isCrit, 'Boss Battle: 15-49 monedas = 250 dmg crítico');
+    assert(dmg5.baseDamage === 80 && !dmg5.isCrit, 'Boss Battle: 5-14 monedas = 80 dmg');
+    assert(dmg1.baseDamage === 15 && !dmg1.isCrit, 'Boss Battle: 1-4 monedas = 15 dmg');
+
+    // Combos de ataque: daño multiplicado por combo (hasta x10)
+    const initialCombos = { warrior: { count: 2, lastTime: Date.now() - 1000 } };
+    const comboResult = applyUserCombo('warrior', 15, false, initialCombos, Date.now());
+    assert(comboResult.combo === 3, 'Boss Battle: Ataque consecutivo en <4s incrementa combo a 3');
+    assert(comboResult.finalDamage === 45, 'Boss Battle: Daño con combo x3 es 15 * 3 = 45');
+    assert(comboResult.isCrit === true, 'Boss Battle: Combo >= 3 otorga golpe crítico');
+
+    // Boss Battle State Update completo
+    const initialBossState = {
+      bossHp: 1000,
+      maxHp: 1000,
+      bossState: 'idle' as const,
+      shield: 30,
+      heroes: [],
+      userCombos: {},
+      chatCooldowns: {},
+      processedEventIds: [],
+    };
+
     const lionEvt = EventNormalizer.normalize({
       type: 'gift',
       user: { username: 'whale_user', nickname: 'Whale', id: 'uw' },
@@ -2988,10 +3072,10 @@ async function runAllTests() {
     }, 'real_tiktok')!;
 
     const nextBossState = processBossBattleEvent(lionEvt, initialBossState);
-    assert(nextBossState.bossHp === 400, 'Boss Battle: Un regalo León de 100 diamantes reduce la vida del jefe de 1000 a 400 (-600 HP)');
+    assert(nextBossState.bossHp === 400, 'Boss Battle: Un regalo León de 100 diamantes reduce la vida de 1000 a 400 (-600 HP)');
     assert(nextBossState.heroes.length === 1 && nextBossState.heroes[0].damage === 600, 'Boss Battle: El héroe registra 600 de daño infligido');
 
-    // Comando chat !atacar
+    // Comando chat !atacar (5 HP)
     const chatEvt = EventNormalizer.normalize({
       type: 'comment',
       user: { username: 'viewer_x', nickname: 'Viewer X', id: 'uv' },
@@ -3001,6 +3085,140 @@ async function runAllTests() {
 
     const finalBossState = processBossBattleEvent(chatEvt, nextBossState);
     assert(finalBossState.bossHp === 395, 'Boss Battle: Comando chat !atacar reduce 5 HP adicionales al jefe (395 HP)');
+  });
+
+  // 72. Validación de Deduplicación Estricta y Aislamiento Multiusuario en Juegos de Producción
+  await test('72. Validación de Deduplicación Estricta y Aislamiento Multiusuario en Juegos de Producción', async () => {
+    const { processFoodRushEvent } = await import('../src/components/games/foodRush/foodRushLogic');
+    const { processBossBattleEvent } = await import('../src/components/games/bossBattle/bossBattleLogic');
+
+    // 1. Food Rush: Ausencia de duplicados (mismo event.id no genera cola adicional ni monedas repetidas)
+    const initialFoodState = {
+      orderQueue: [],
+      rushCoins: 0,
+      rushHourActiveUntil: 0,
+      isFireEmergency: false,
+      extinguishProgress: 0,
+      speedMultiplier: 1.0,
+      likesCount: 0,
+      boostActiveUntil: 0,
+      recentCheer: null,
+      topCustomers: [],
+      orderQueueCount: 0,
+      processedEventIds: [],
+    };
+
+    const testGiftEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'cliente_unico', id: 'u_unique' },
+      gift: { giftName: 'Ceviche', diamondCount: 10, repeatCount: 1 },
+      id: 'unique-fr-event-12345',
+    }, 'real_tiktok')!;
+
+    // Primera llegada: debe procesarse
+    const firstFoodRun = processFoodRushEvent(testGiftEvt, initialFoodState, 50);
+    assert(!firstFoodRun.isDuplicate, 'Primera llegada no es duplicada');
+    assert(firstFoodRun.orderQueue.length === 1, 'Se añade 1 pedido a la cola');
+    assert(firstFoodRun.rushCoins === 10, 'Se acumulan 10 monedas');
+
+    // Segunda llegada del mismo evento con id idéntico: debe ser rechazado sin acción repetida
+    const duplicateFoodRun = processFoodRushEvent(testGiftEvt, firstFoodRun, 50);
+    assert(duplicateFoodRun.isDuplicate === true, 'El evento idéntico debe detectarse como duplicado');
+    assert(duplicateFoodRun.orderQueue.length === 1, 'La cola no debe haber aumentado');
+    assert(duplicateFoodRun.rushCoins === 10, 'Las monedas no deben haberse incrementado');
+
+    // 2. Boss Battle: Ausencia de duplicados (mismo event.id no inflige daño adicional)
+    const initialBossState = {
+      bossHp: 1000,
+      maxHp: 1000,
+      bossState: 'idle' as const,
+      shield: 30,
+      heroes: [],
+      userCombos: {},
+      chatCooldowns: {},
+      processedEventIds: [],
+    };
+
+    const attackGiftEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'atacante_leon', id: 'u_atk' },
+      gift: { giftName: 'León', diamondCount: 50, repeatCount: 1 },
+      id: 'unique-bb-event-67890',
+    }, 'real_tiktok')!;
+
+    // Primera llegada: inflige 600 daño
+    const firstBossRun = processBossBattleEvent(attackGiftEvt, initialBossState);
+    assert(!firstBossRun.isDuplicate, 'Primer ataque aceptado');
+    assert(firstBossRun.bossHp === 400, 'Vida del jefe reducida a 400 (-600 HP)');
+
+    // Replay duplicado: NO debe infligir daño nuevamente
+    const duplicateBossRun = processBossBattleEvent(attackGiftEvt, firstBossRun);
+    assert(duplicateBossRun.isDuplicate === true, 'Ataque duplicado detectado');
+    assert(duplicateBossRun.bossHp === 400, 'La vida del jefe permanece en 400 sin daño adicional');
+
+    // Cooldown de comando !atacar en Boss Battle (10s de espera por usuario)
+    const chatAttackEvt = EventNormalizer.normalize({
+      type: 'comment',
+      user: { username: 'spammer_user', id: 'u_spam' },
+      comment: '!atacar con arco',
+      id: 'chat-atk-1',
+    }, 'real_tiktok')!;
+
+    const now = Date.now();
+    const firstChatAtk = processBossBattleEvent(chatAttackEvt, duplicateBossRun, now);
+    assert(firstChatAtk.bossHp === 395, 'Primer comando chat inflige 5 daño (395 HP)');
+
+    // Intento inmediato de spam en t = now + 1000ms (< 10000ms): debe bloquearse por enfriamiento
+    const spamChatAtkEvt = EventNormalizer.normalize({
+      type: 'comment',
+      user: { username: 'spammer_user', id: 'u_spam' },
+      comment: '!atacar con arco de nuevo',
+      id: 'chat-atk-2',
+    }, 'real_tiktok')!;
+    const blockedChatAtk = processBossBattleEvent(spamChatAtkEvt, firstChatAtk, now + 1000);
+    assert(blockedChatAtk.bossHp === 395, 'Spam antes de 10s es bloqueado sin daño adicional');
+
+    // 3. Aislamiento Multiusuario entre streamers independientes
+    const streamerAState = {
+      orderQueue: [],
+      rushCoins: 0,
+      rushHourActiveUntil: 0,
+      isFireEmergency: false,
+      extinguishProgress: 0,
+      speedMultiplier: 1.0,
+      likesCount: 0,
+      boostActiveUntil: 0,
+      recentCheer: null,
+      topCustomers: [],
+      orderQueueCount: 0,
+      processedEventIds: [],
+    };
+
+    const streamerBState = {
+      orderQueue: [],
+      rushCoins: 0,
+      rushHourActiveUntil: 0,
+      isFireEmergency: false,
+      extinguishProgress: 0,
+      speedMultiplier: 1.0,
+      likesCount: 0,
+      boostActiveUntil: 0,
+      recentCheer: null,
+      topCustomers: [],
+      orderQueueCount: 0,
+      processedEventIds: [],
+    };
+
+    const evtStreamerA = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'fan_de_a', id: 'u_a' },
+      gift: { giftName: 'Rosa', diamondCount: 1, repeatCount: 1 },
+      id: 'evt-streamer-a-1',
+    }, 'real_tiktok')!;
+
+    const resA = processFoodRushEvent(evtStreamerA, streamerAState, 50);
+    assert(resA.orderQueue.length === 1 && resA.rushCoins === 1, 'Partida de Streamer A actualizada');
+    assert(streamerBState.orderQueue.length === 0 && streamerBState.rushCoins === 0, 'Partida de Streamer B permanece totalmente limpia y aislada');
   });
 
   console.log('\n======================================================');

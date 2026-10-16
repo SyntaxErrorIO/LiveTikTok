@@ -277,14 +277,54 @@ export class AutomatedTestRunner {
           details: 'Respeta ventana temporal de enfriamiento y rechaza ejecuciones prematuras.',
         });
       } else {
-        results.push({
-          test: 'Prevención de Ráfagas y Cooldown de Reglas',
-          status: 'failed',
-          details: 'Fallo en lógica de cooldown.',
-        });
+        results.push({ test: 'Prevención de Ráfagas y Cooldown de Reglas', status: 'failed', details: 'Fallo en lógica de cooldown.' });
       }
     } catch (err: any) {
       results.push({ test: 'Prevención de Ráfagas y Cooldown de Reglas', status: 'failed', details: err.message });
+    }
+
+    // Test 11: Food Rush unified logic & deduplication
+    try {
+      const { processFoodRushEvent } = await import('../components/games/foodRush/foodRushLogic');
+      const testEvt = EventNormalizer.normalize({
+        type: 'gift',
+        user: { username: 'test_foodie', id: 'u_f' },
+        gift: { giftName: 'Rosa', diamondCount: 1, repeatCount: 1 },
+        id: 'runner-fr-1',
+      }, 'real_tiktok')!;
+      const state = processFoodRushEvent(testEvt, {
+        orderQueue: [], rushCoins: 0, rushHourActiveUntil: 0, isFireEmergency: false,
+        extinguishProgress: 0, speedMultiplier: 1.0, likesCount: 0, boostActiveUntil: 0,
+        topCustomers: [], processedEventIds: [],
+      });
+      const dupState = processFoodRushEvent(testEvt, state);
+      if (state.orderQueue.length === 1 && dupState.isDuplicate) {
+        results.push({ test: 'Lógica Unificada Food Rush y Deduplicación', status: 'passed', details: 'Cola y duplicados validados.' });
+      } else {
+        results.push({ test: 'Lógica Unificada Food Rush y Deduplicación', status: 'failed', details: 'Fallo al procesar.' });
+      }
+    } catch (err: any) {
+      results.push({ test: 'Lógica Unificada Food Rush y Deduplicación', status: 'failed', details: err.message });
+    }
+
+    // Test 12: Boss Battle unified logic & deduplication
+    try {
+      const { processBossBattleEvent } = await import('../components/games/bossBattle/bossBattleLogic');
+      const testAtk = EventNormalizer.normalize({
+        type: 'gift',
+        user: { username: 'hero_runner', id: 'u_h' },
+        gift: { giftName: 'León', diamondCount: 50, repeatCount: 1 },
+        id: 'runner-bb-1',
+      }, 'real_tiktok')!;
+      const state = processBossBattleEvent(testAtk, { bossHp: 1000, maxHp: 1000, bossState: 'idle', shield: 30, heroes: [] });
+      const dupState = processBossBattleEvent(testAtk, state);
+      if (state.bossHp === 400 && state.heroes.length === 1 && dupState.isDuplicate) {
+        results.push({ test: 'Lógica Unificada Boss Battle y Deduplicación', status: 'passed', details: 'Daño 600 HP y duplicados validados.' });
+      } else {
+        results.push({ test: 'Lógica Unificada Boss Battle y Deduplicación', status: 'failed', details: 'Fallo al procesar.' });
+      }
+    } catch (err: any) {
+      results.push({ test: 'Lógica Unificada Boss Battle y Deduplicación', status: 'failed', details: err.message });
     }
 
     const allPassed = results.every((r) => r.status === 'passed');

@@ -4,6 +4,12 @@ import { eventBus } from '../../../services/eventBus';
 import { apiService } from '../../../services/apiService';
 import { Swords, Shield, Heart, Zap, Trophy, Volume2, VolumeX, Sparkles, Skull, RotateCcw, Flame } from 'lucide-react';
 import { CustomerAvatar } from '../common/CustomerAvatar';
+import {
+  processBossBattleEvent,
+  processBossBattleAction,
+  BossBattleState,
+  BossHeroEntry,
+} from './bossBattleLogic';
 
 interface DamagePop {
   id: string;
@@ -54,183 +60,147 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
   const [soundMuted, setSoundMuted] = useState(false);
   const [recentAttack, setRecentAttack] = useState<{ user: string; text: string; gift?: string; avatarUrl?: string } | null>(null);
 
-  // Stacking combos & cooldowns ref
-  const userComboRef = useRef<Map<string, { count: number; lastTime: number }>>(new Map());
-  const chatCooldownRef = useRef<Map<string, number>>(new Map());
+  // Tracking de combos por usuario, enfriamientos de chat y deduplicación por ID
+  const userCombosRef = useRef<Record<string, { count: number; lastTime: number }>>({});
+  const chatCooldownRef = useRef<Record<string, number>>({});
+  const processedEventIdsRef = useRef<string[]>([]);
 
   const isEnraged = bossHp < maxHp * 0.4 && bossHp > 0;
 
-  // Inflict damage to boss with combo stacking & OBS memory protection (max 25 active elements)
-  const inflictDamage = useCallback(
-    (
-      user: { id?: string; username: string; nickname?: string; avatarUrl?: string },
-      baseDamage: number,
-      giftName: string,
-      isCrit = false
-    ) => {
-      const usernameKey = user.username.toLowerCase();
-      const now = Date.now();
-      const userCombos = userComboRef.current;
-      const existingCombo = userCombos.get(usernameKey);
-
-      let combo = 1;
-      if (existingCombo && now - existingCombo.lastTime < 4000) {
-        combo = existingCombo.count + 1;
-      }
-      userCombos.set(usernameKey, { count: combo, lastTime: now });
-
-      const finalDamage = baseDamage * Math.min(combo, 10);
-      const effectiveCrit = isCrit || combo >= 3;
-
-      // Update boss HP
-      setBossHp((prev) => {
-        const next = Math.max(0, prev - finalDamage);
-        if (next === 0) {
-          setBossState('defeated');
-        } else {
-          setBossState('hit');
-          setTimeout(() => {
-            setBossState(next < maxHp * 0.4 ? 'enraged' : 'idle');
-          }, 350);
-        }
-        return next;
-      });
-
-      // Spawn projectile
-      const projType: 'fireball' | 'lightning' | 'sword' =
-        finalDamage >= 300 ? 'lightning' : finalDamage >= 100 ? 'fireball' : 'sword';
-
-      const projId = 'proj-' + Math.random().toString(36).substring(2, 7);
-      const newProj: Projectile = {
-        id: projId,
-        type: projType,
-        startX: 15 + Math.random() * 70,
-        startY: 85,
-        targetX: 50,
-        targetY: 45,
-        username: user.username,
-        avatarUrl: user.avatarUrl,
-      };
-
-      setProjectiles((prev) => [...prev.slice(-20), newProj]);
-      setTimeout(() => {
-        setProjectiles((prev) => prev.filter((p) => p.id !== projId));
-      }, 900);
-
-      // Spawn floating damage text
-      const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
-      const newPop: DamagePop = {
-        id: popId,
-        x: 35 + Math.random() * 30,
-        y: 35 + Math.random() * 20,
-        damage: finalDamage,
-        isCrit: effectiveCrit,
-        username: user.username,
-        comboCount: combo > 1 ? combo : undefined,
-      };
-
-      setDamagePops((prev) => [...prev.slice(-20), newPop]);
-      setTimeout(() => {
-        setDamagePops((prev) => prev.filter((p) => p.id !== popId));
-      }, 1400);
-
-      // Record hero score
-      setHeroes((prev) => {
-        const existingIdx = prev.findIndex((h) => h.username.toLowerCase() === usernameKey);
-        let updated: HeroAttacker[];
-        if (existingIdx >= 0) {
-          const item = { ...prev[existingIdx] };
-          item.damage += finalDamage;
-          item.attacksCount += 1;
-          item.combo = combo;
-          if (user.avatarUrl) item.avatarUrl = user.avatarUrl;
-          updated = [...prev];
-          updated[existingIdx] = item;
-        } else {
-          updated = [
-            ...prev,
-            {
-              username: user.username,
-              nickname: user.nickname || user.username,
-              avatarUrl: user.avatarUrl,
-              damage: finalDamage,
-              attacksCount: 1,
-              combo,
-            },
-          ];
-        }
-        updated.sort((a, b) => b.damage - a.damage);
-        return updated.slice(0, 10);
-      });
-
-      setRecentAttack({
-        user: user.nickname || user.username,
-        text: `-${finalDamage} HP ${combo > 1 ? `(¡Combo x${combo}!)` : ''} ${effectiveCrit ? '¡CRÍTICO!' : ''}`,
-        gift: giftName,
-        avatarUrl: user.avatarUrl,
-      });
-      setTimeout(() => setRecentAttack(null), 2500);
-    },
-    [maxHp]
-  );
-
-  // Ingest TikTok events for Boss Battle
+  // Ingest TikTok events for Boss Battle delegando a la función de producción compartida
   const handleIncomingEvent = useCallback(
     (event: TikTokEvent) => {
       if (!event || !event.type) return;
 
-      if (event.type === 'gift') {
-        const coins = (Number(event.data.diamondCount) || 1) * (Number(event.data.repeatCount) || 1);
-        const giftName = event.data.giftName || 'Regalo';
+      const currentState: BossBattleState = {
+        bossHp,
+        maxHp,
+        bossState,
+        shield,
+        heroes,
+        recentAttack,
+        userCombos: userCombosRef.current,
+        chatCooldowns: chatCooldownRef.current,
+        processedEventIds: processedEventIdsRef.current,
+      };
 
-        let damage = coins * 15;
-        let isCrit = false;
+      const result = processBossBattleEvent(event, currentState, Date.now());
 
-        if (coins >= 50) {
-          damage = 600;
-          isCrit = true;
-        } else if (coins >= 15) {
-          damage = 250;
-          isCrit = true;
-        } else if (coins >= 5) {
-          damage = 80;
-        } else {
-          damage = 15;
+      // Si fue detectado como duplicado por ID, no aplicar daño ni efectos repetidos
+      if (result.isDuplicate) {
+        return;
+      }
+
+      processedEventIdsRef.current = result.processedEventIds || [];
+      userCombosRef.current = result.userCombos || {};
+      chatCooldownRef.current = result.chatCooldowns || {};
+
+      setBossHp(result.bossHp);
+      setBossState(result.bossState);
+      setShield(result.shield);
+      setHeroes(result.heroes);
+
+      if (result.recentAttack) {
+        setRecentAttack(result.recentAttack);
+        setTimeout(() => setRecentAttack(null), 2500);
+      }
+
+      // Animaciones visuales: Proyectiles y Números de Daño flotantes
+      if (result.damageDealt && result.damageDealt > 0 && result.attacker) {
+        const finalDamage = result.damageDealt;
+        const effectiveCrit = Boolean(result.isCrit);
+        const projType = result.projectileType || 'sword';
+
+        if (result.bossHp > 0) {
+          setTimeout(() => {
+            setBossState((curr) => (curr === 'hit' ? (result.bossHp < maxHp * 0.4 ? 'enraged' : 'idle') : curr));
+          }, 350);
         }
 
-        inflictDamage(event.user, damage, giftName, isCrit);
-      } else if (event.type === 'like') {
-        const count = Number(event.data.likeCount) || 1;
-        setShield((prev) => Math.min(100, prev + count * 0.5));
-      } else if (event.type === 'comment') {
-        const text = (event.data.comment || '').toLowerCase().trim();
-        if (text.includes('!atacar') || text.includes('ataque') || text.includes('fuego')) {
-          const username = event.user.username;
-          const now = Date.now();
-          const lastAttackTime = chatCooldownRef.current.get(username) || 0;
+        const projId = 'proj-' + Math.random().toString(36).substring(2, 7);
+        const newProj: Projectile = {
+          id: projId,
+          type: projType,
+          startX: 15 + Math.random() * 70,
+          startY: 85,
+          targetX: 50,
+          targetY: 45,
+          username: result.attacker.username,
+          avatarUrl: result.attacker.avatarUrl,
+        };
 
-          // 10 seconds cooldown per user for free chat attack
-          if (now - lastAttackTime > 10000) {
-            chatCooldownRef.current.set(username, now);
-            inflictDamage(event.user, 5, 'Comando Chat (!atacar)', false);
-          }
-        }
+        setProjectiles((prev) => [...prev.slice(-20), newProj]);
+        setTimeout(() => {
+          setProjectiles((prev) => prev.filter((p) => p.id !== projId));
+        }, 900);
+
+        const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
+        const newPop: DamagePop = {
+          id: popId,
+          x: 35 + Math.random() * 30,
+          y: 35 + Math.random() * 20,
+          damage: finalDamage,
+          isCrit: effectiveCrit,
+          username: result.attacker.username,
+          comboCount: (result.combo || 1) > 1 ? result.combo : undefined,
+        };
+
+        setDamagePops((prev) => [...prev.slice(-20), newPop]);
+        setTimeout(() => {
+          setDamagePops((prev) => prev.filter((p) => p.id !== popId));
+        }, 1400);
       }
     },
-    [inflictDamage]
+    [bossHp, maxHp, bossState, shield, heroes, recentAttack]
   );
 
+  // Manejo de eventos de bus local y SSE del servidor
   useEffect(() => {
     const unsubBus = eventBus.subscribe((msg) => {
       if (msg.type === 'TIKTOK_EVENT_RECEIVED') {
         handleIncomingEvent(msg.payload);
       } else if (msg.type === 'GAME_ACTION_RECEIVED' && msg.payload?.action === 'BOSS_ATTACK') {
-        inflictDamage(
-          { username: msg.payload.username || 'heroe_live', nickname: msg.payload.nickname || 'Héroe del Chat', avatarUrl: msg.payload.avatarUrl },
-          msg.payload.damage || 50,
-          msg.payload.gift || 'Ataque Especial',
-          msg.payload.isCrit
-        );
+        const currentState: BossBattleState = {
+          bossHp,
+          maxHp,
+          bossState,
+          shield,
+          heroes,
+          recentAttack,
+          userCombos: userCombosRef.current,
+          chatCooldowns: chatCooldownRef.current,
+          processedEventIds: processedEventIdsRef.current,
+        };
+
+        const result = processBossBattleAction(msg.payload, currentState, Date.now());
+        processedEventIdsRef.current = result.processedEventIds || [];
+        userCombosRef.current = result.userCombos || {};
+        chatCooldownRef.current = result.chatCooldowns || {};
+
+        setBossHp(result.bossHp);
+        setBossState(result.bossState);
+        setHeroes(result.heroes);
+
+        if (result.recentAttack) {
+          setRecentAttack(result.recentAttack);
+          setTimeout(() => setRecentAttack(null), 2500);
+        }
+
+        if (result.damageDealt && result.damageDealt > 0 && result.attacker) {
+          const finalDamage = result.damageDealt;
+          const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
+          const newPop: DamagePop = {
+            id: popId,
+            x: 35 + Math.random() * 30,
+            y: 35 + Math.random() * 20,
+            damage: finalDamage,
+            isCrit: Boolean(result.isCrit),
+            username: result.attacker.username,
+            comboCount: (result.combo || 1) > 1 ? result.combo : undefined,
+          };
+          setDamagePops((prev) => [...prev.slice(-20), newPop]);
+          setTimeout(() => setDamagePops((prev) => prev.filter((p) => p.id !== popId)), 1400);
+        }
       }
     });
 
@@ -244,7 +214,7 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
       unsubBus();
       unsubSSE();
     };
-  }, [handleIncomingEvent, inflictDamage]);
+  }, [handleIncomingEvent, bossHp, maxHp, bossState, shield, heroes, recentAttack]);
 
   const handleResetBoss = () => {
     setBossHp(maxHp);
@@ -252,6 +222,8 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
     setShield(30);
     setDamagePops([]);
     setProjectiles([]);
+    userCombosRef.current = {};
+    chatCooldownRef.current = {};
   };
 
   const hpPercent = (bossHp / maxHp) * 100;
