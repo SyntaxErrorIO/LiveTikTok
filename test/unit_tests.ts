@@ -2950,6 +2950,59 @@ async function runAllTests() {
     assert(obsReceivedPayload.data.diamondCount === 500, 'Los diamantes en OBS coinciden');
   });
 
+  // 71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates
+  await test('71. Pruebas de Lógica de Juegos Reales: Food Rush y Boss Battle State Updates', async () => {
+    const { processFoodRushEvent } = await import('../src/components/games/foodRush/foodRushLogic');
+    const { processBossBattleEvent } = await import('../src/components/games/bossBattle/bossBattleLogic');
+
+    // 1. Food Rush State Update
+    const initialFoodState = { rushCoins: 10, isFireEmergency: false, extinguishProgress: 0, orderQueueCount: 0 };
+    const giftFoodEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'gamer1', id: 'u1' },
+      gift: { giftName: 'Ceviche', diamondCount: 20, repeatCount: 1 },
+      id: 'fr-1',
+    }, 'real_tiktok')!;
+
+    const nextFoodState = processFoodRushEvent(giftFoodEvt, initialFoodState, 100);
+    assert(nextFoodState.rushCoins === 30, 'Food Rush: Las monedas acumuladas aumentan en 20');
+    assert(nextFoodState.orderQueueCount === 1, 'Food Rush: La cola de pedidos incrementa');
+
+    // Sabotaje Fuego
+    const fireEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'troll', id: 'u2' },
+      gift: { giftName: 'Fuego ardiente', diamondCount: 1, repeatCount: 1 },
+      id: 'fr-2',
+    }, 'real_tiktok')!;
+    const fireState = processFoodRushEvent(fireEvt, nextFoodState, 100);
+    assert(fireState.isFireEmergency === true, 'Food Rush: Regalo de fuego activa la emergencia de incendio');
+
+    // 2. Boss Battle State Update
+    const initialBossState = { bossHp: 1000, maxHp: 1000, shield: 30, heroes: [] };
+    const lionEvt = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'whale_user', nickname: 'Whale', id: 'uw' },
+      gift: { giftName: 'León', diamondCount: 100, repeatCount: 1 },
+      id: 'bb-1',
+    }, 'real_tiktok')!;
+
+    const nextBossState = processBossBattleEvent(lionEvt, initialBossState);
+    assert(nextBossState.bossHp === 400, 'Boss Battle: Un regalo León de 100 diamantes reduce la vida del jefe de 1000 a 400 (-600 HP)');
+    assert(nextBossState.heroes.length === 1 && nextBossState.heroes[0].damage === 600, 'Boss Battle: El héroe registra 600 de daño infligido');
+
+    // Comando chat !atacar
+    const chatEvt = EventNormalizer.normalize({
+      type: 'comment',
+      user: { username: 'viewer_x', nickname: 'Viewer X', id: 'uv' },
+      comment: '!atacar al jefe con espada',
+      id: 'bb-2',
+    }, 'real_tiktok')!;
+
+    const finalBossState = processBossBattleEvent(chatEvt, nextBossState);
+    assert(finalBossState.bossHp === 395, 'Boss Battle: Comando chat !atacar reduce 5 HP adicionales al jefe (395 HP)');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
