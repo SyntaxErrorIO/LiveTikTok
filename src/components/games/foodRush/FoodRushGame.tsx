@@ -100,9 +100,10 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       return;
     }
     const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((rushHourActiveUntil - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.ceil((gameStateRef.current.rushHourActiveUntil - Date.now()) / 1000));
       setRushSecondsLeft(remaining);
       if (remaining <= 0) {
+        gameStateRef.current.rushHourActiveUntil = 0;
         setRushHourActiveUntil(0);
       }
     }, 250);
@@ -142,13 +143,30 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
     }
   }, []);
 
-  // Tracking de eventos deduplicados por ID para evitar acciones repetidas en el juego
-  const processedEventIdsRef = useRef<string[]>([]);
+  // Referencia sincrónica autoritativa con el estado más reciente del juego
+  // Garantiza que ráfagas de regalos o eventos consecutivos se procesen siempre sobre el estado más fresco
+  const configRef = useRef(config);
+  configRef.current = config;
+
+  const gameStateRef = useRef<FoodRushState>({
+    orderQueue: [],
+    rushCoins: 0,
+    rushHourActiveUntil: 0,
+    isFireEmergency: Boolean(config.foodRush.fireSabotageActive),
+    extinguishProgress: 0,
+    speedMultiplier: 1.0,
+    likesCount: 0,
+    boostActiveUntil: 0,
+    recentCheer: null,
+    topCustomers: GameStorageService.getTopCustomers(),
+    processedEventIds: [],
+  });
 
   // Update Top Customers leaderboard in state & storage usando la función pura unificada
   const recordCustomerOrder = useCallback((order: FoodOrder) => {
     setTopCustomers((prev) => {
-      const updated = updateCustomerLeaderboard(prev, order);
+      const updated = updateCustomerLeaderboard(gameStateRef.current.topCustomers || prev, order);
+      gameStateRef.current.topCustomers = updated;
       GameStorageService.saveTopCustomers(updated);
       return updated;
     });
@@ -159,28 +177,32 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
     (event: TikTokEvent) => {
       if (!event || !event.type) return;
 
-      const currentState: FoodRushState = {
-        orderQueue,
-        rushCoins,
-        rushHourActiveUntil,
-        isFireEmergency,
-        extinguishProgress,
-        speedMultiplier,
-        likesCount,
-        boostActiveUntil,
-        recentCheer,
-        topCustomers,
-        processedEventIds: processedEventIdsRef.current,
-      };
-
-      const result = processFoodRushEvent(event, currentState, config.foodRush, Date.now());
+      // Lectura sincrónica del estado en memoria más reciente (evita stale closure ante ráfagas)
+      const currentState = gameStateRef.current;
+      const result = processFoodRushEvent(event, currentState, configRef.current.foodRush, Date.now());
 
       // Si el evento fue detectado como duplicado por ID, no producir acciones repetidas
       if (result.isDuplicate) {
         return;
       }
 
-      processedEventIdsRef.current = result.processedEventIds || [];
+      // Actualizar sincrónicamente la referencia ANTES de despachar setState de React
+      // Esto asegura que si varios eventos llegan consecutivamente en el mismo tick/microtarea,
+      // el siguiente evento ya procesa sobre los pedidos y monedas agregados por el anterior
+      gameStateRef.current = {
+        ...gameStateRef.current,
+        orderQueue: result.orderQueue,
+        rushCoins: result.rushCoins,
+        rushHourActiveUntil: result.rushHourActiveUntil,
+        isFireEmergency: result.isFireEmergency,
+        extinguishProgress: result.extinguishProgress,
+        speedMultiplier: result.speedMultiplier,
+        likesCount: result.likesCount,
+        boostActiveUntil: result.boostActiveUntil,
+        recentCheer: result.recentCheer,
+        processedEventIds: result.processedEventIds || [],
+      };
+
       setOrderQueue(result.orderQueue);
       setRushCoins(result.rushCoins);
       setRushHourActiveUntil(result.rushHourActiveUntil);
@@ -198,7 +220,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       }
 
       // Animación de partículas de corazones flotantes por Likes
-      if (event.type === 'like' && config.foodRush.likesBoostEnabled) {
+      if (event.type === 'like' && configRef.current.foodRush.likesBoostEnabled) {
         const heartId = 'heart-' + Math.random().toString(36).substring(2, 7);
         setFloatingHearts((prev) => [...prev.slice(-6), { id: heartId, x: 20 + Math.random() * 60 }]);
         setTimeout(() => {
@@ -233,85 +255,72 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         } catch {}
       }
     },
-    [
-      config,
-      orderQueue,
-      rushCoins,
-      rushHourActiveUntil,
-      isFireEmergency,
-      extinguishProgress,
-      speedMultiplier,
-      likesCount,
-      boostActiveUntil,
-      recentCheer,
-      topCustomers,
-    ]
+    [] // Callback estable: no recrea en cada cambio de estado
   );
 
-  // Subscribe to EventBus and SSE Stream
-  useEffect(() => {
-    const handleGameAction = (actionPayload: any) => {
-      if (!actionPayload || !actionPayload.action) return;
-      const action = actionPayload.action;
+  const handleGameAction = useCallback((actionPayload: any) => {
+    if (!actionPayload || !actionPayload.action) return;
+    const action = actionPayload.action;
 
-      const currentState: FoodRushState = {
-        orderQueue,
-        rushCoins,
-        rushHourActiveUntil,
-        isFireEmergency,
-        extinguishProgress,
-        speedMultiplier,
-        likesCount,
-        boostActiveUntil,
-        recentCheer,
-        topCustomers,
-        processedEventIds: processedEventIdsRef.current,
-      };
+    const currentState = gameStateRef.current;
+    const result = processFoodRushAction(action, currentState, Date.now());
 
-      const result = processFoodRushAction(action, currentState, Date.now());
-
-      setIsFireEmergency(result.isFireEmergency);
-      setExtinguishProgress(result.extinguishProgress);
-      setRushHourActiveUntil(result.rushHourActiveUntil);
-
-      if (result.audioEffects) {
-        for (const fx of result.audioEffects) {
-          if (fx === 'fireWoosh') foodAudio.playFireWoosh();
-          else if (fx === 'fanfare') foodAudio.playFanfare();
-        }
-      }
-
-      if (result.confettiEffect === 'extinguish') {
-        try {
-          confetti({ particleCount: 70, spread: 80, origin: { y: 0.3 } });
-        } catch {}
-      } else if (result.confettiEffect === 'rushHour') {
-        try {
-          confetti({
-            particleCount: 120,
-            spread: 100,
-            origin: { y: 0.25 },
-            colors: ['#facc15', '#f59e0b', '#fbbf24', '#ffffff'],
-          });
-        } catch {}
-      }
+    gameStateRef.current = {
+      ...gameStateRef.current,
+      rushHourActiveUntil: result.rushHourActiveUntil,
+      isFireEmergency: result.isFireEmergency,
+      extinguishProgress: result.extinguishProgress,
     };
 
-    // 1. Local Bus (Simulator & Web UI actions)
+    setIsFireEmergency(result.isFireEmergency);
+    setExtinguishProgress(result.extinguishProgress);
+    setRushHourActiveUntil(result.rushHourActiveUntil);
+
+    if (result.audioEffects) {
+      for (const fx of result.audioEffects) {
+        if (fx === 'fireWoosh') foodAudio.playFireWoosh();
+        else if (fx === 'fanfare') foodAudio.playFanfare();
+      }
+    }
+
+    if (result.confettiEffect === 'extinguish') {
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.3 } });
+      } catch {}
+    } else if (result.confettiEffect === 'rushHour') {
+      try {
+        confetti({
+          particleCount: 120,
+          spread: 100,
+          origin: { y: 0.25 },
+          colors: ['#facc15', '#f59e0b', '#fbbf24', '#ffffff'],
+        });
+      } catch {}
+    }
+  }, []); // Callback estable
+
+  // Referencias a los handlers para evitar resuscripciones innecesarias al EventBus y SSE
+  const handleIncomingTikTokEventRef = useRef(handleIncomingTikTokEvent);
+  handleIncomingTikTokEventRef.current = handleIncomingTikTokEvent;
+
+  const handleGameActionRef = useRef(handleGameAction);
+  handleGameActionRef.current = handleGameAction;
+
+  // Subscripción única al montar el componente: NUNCA se resuscribe ante cambios de estado
+  useEffect(() => {
     const unsubBus = eventBus.subscribe((msg) => {
       if (msg.type === 'TIKTOK_EVENT_RECEIVED') {
-        handleIncomingTikTokEvent(msg.payload);
+        handleIncomingTikTokEventRef.current(msg.payload);
       } else if (msg.type === 'GAME_ACTION_RECEIVED') {
-        handleGameAction(msg.payload);
+        handleGameActionRef.current(msg.payload);
       }
     });
 
-    // 2. SSE Server Stream (Real TikTok live events & remote actions from OBS)
     const unsubSSE = apiService.onSSEMessage((data) => {
       if (data.type === 'TIKTOK_EVENT' && data.payload) {
-        handleIncomingTikTokEvent(data.payload);
+        handleIncomingTikTokEventRef.current(data.payload);
       } else if (data.type === 'GAME_ACTION') {
-        handleGameAction(data.payload);
+        handleGameActionRef.current(data.payload);
       }
     });
 
@@ -319,40 +328,32 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       unsubBus();
       unsubSSE();
     };
-  }, [
-    handleIncomingTikTokEvent,
-    orderQueue,
-    rushCoins,
-    rushHourActiveUntil,
-    isFireEmergency,
-    extinguishProgress,
-    speedMultiplier,
-    likesCount,
-    boostActiveUntil,
-    recentCheer,
-    topCustomers,
-  ]);
+  }, []); // Sin dependencias: previene pérdidas de paquetes o reconexiones durante ráfagas de eventos
 
   // Speed boost timer decay
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
-      if (boostActiveUntil > 0) {
-        if (now > boostActiveUntil) {
+      if (gameStateRef.current.boostActiveUntil > 0) {
+        if (now > gameStateRef.current.boostActiveUntil) {
+          gameStateRef.current.speedMultiplier = 1.0;
+          gameStateRef.current.boostActiveUntil = 0;
           setSpeedMultiplier(1.0);
           setBoostActiveUntil(0);
         }
       }
     }, 500);
     return () => clearInterval(timer);
-  }, [boostActiveUntil]);
+  }, []);
 
-  // Main Cooking Loop (Pulls from queue and cooks active dish)
+  // Main Cooking Loop (Pulls from queue and cooks active dish sobre gameStateRef sincrónico)
   useEffect(() => {
     // If chef is idle and queue has orders, pick the next one!
-    if (!currentOrder && orderQueue.length > 0 && !isServing) {
-      const nextOrder = orderQueue[0];
-      setOrderQueue((prev) => prev.slice(1));
+    if (!currentOrder && !isServing && gameStateRef.current.orderQueue.length > 0) {
+      const nextOrder = gameStateRef.current.orderQueue[0];
+      const remaining = gameStateRef.current.orderQueue.slice(1);
+      gameStateRef.current.orderQueue = remaining;
+      setOrderQueue(remaining);
       setCurrentOrder({ ...nextOrder, status: 'cooking', cookProgress: 0 });
       setIsCooking(true);
 
@@ -364,7 +365,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         foodAudio.playSizzle();
       }
     }
-  }, [currentOrder, orderQueue, isServing]);
+  }, [currentOrder, orderQueue.length, isServing]);
 
   // Cooking progress tick
   useEffect(() => {
@@ -401,7 +402,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
       recordCustomerOrder(finishedOrder);
 
       // Activación de la presentación en toda la pantalla (Showcase) al terminar de cocinar
-      if (config.foodRush.fullScreenShowcaseEnabled !== false) {
+      if (configRef.current.foodRush.fullScreenShowcaseEnabled !== false) {
         setFullScreenOrder(finishedOrder);
       }
 
@@ -413,7 +414,7 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
         setCompletedOrder(null);
       }, 1600);
     },
-    [recordCustomerOrder, config.foodRush.fullScreenShowcaseEnabled]
+    [recordCustomerOrder]
   );
 
   // Top 3 Customers
@@ -421,8 +422,12 @@ export const FoodRushGame: React.FC<FoodRushGameProps> = ({
 
   // Mini-boost cuando el streamer o espectador interactúa con Remy
   const handleRemyBoost = useCallback(() => {
-    setSpeedMultiplier((prev) => Math.min(3.0, prev + 0.15));
-    setBoostActiveUntil(Date.now() + 8000);
+    const nextSpeed = Math.min(3.0, (gameStateRef.current.speedMultiplier || 1.0) + 0.15);
+    const nextBoostUntil = Date.now() + 8000;
+    gameStateRef.current.speedMultiplier = nextSpeed;
+    gameStateRef.current.boostActiveUntil = nextBoostUntil;
+    setSpeedMultiplier(nextSpeed);
+    setBoostActiveUntil(nextBoostUntil);
     setRecentCheer({
       user: 'Remy',
       text: '¡Sazón Secreto activado! +15% velocidad 🧀⚡',

@@ -3221,6 +3221,115 @@ async function runAllTests() {
     assert(streamerBState.orderQueue.length === 0 && streamerBState.rushCoins === 0, 'Partida de Streamer B permanece totalmente limpia y aislada');
   });
 
+  // 73. Validación de Regalos Consecutivos y Ráfagas Rápidas sin Pérdida de Estado
+  await test('73. Validación de Regalos Consecutivos y Ráfagas Rápidas sin Pérdida de Estado', async () => {
+    const { processFoodRushEvent } = await import('../src/components/games/foodRush/foodRushLogic');
+    const { processBossBattleEvent } = await import('../src/components/games/bossBattle/bossBattleLogic');
+    type FoodState = import('../src/components/games/foodRush/foodRushLogic').FoodRushState;
+    type BossState = import('../src/components/games/bossBattle/bossBattleLogic').BossBattleState;
+
+    // 1. Food Rush: 5 regalos consecutivos recibidos en rápida sucesión
+    let currentFoodState: FoodState = {
+      orderQueue: [],
+      rushCoins: 0,
+      rushHourActiveUntil: 0,
+      isFireEmergency: false,
+      extinguishProgress: 0,
+      speedMultiplier: 1.0,
+      likesCount: 0,
+      boostActiveUntil: 0,
+      recentCheer: null,
+      topCustomers: [],
+      orderQueueCount: 0,
+      processedEventIds: [],
+    };
+
+    const targetGoalCoins = 50;
+    const now = Date.now();
+
+    for (let i = 1; i <= 5; i++) {
+      const consecutiveGift = EventNormalizer.normalize({
+        type: 'gift',
+        user: { username: `consecutive_viewer_${i}`, id: `user_${i}` },
+        gift: { giftName: 'Ceviche Mixto', diamondCount: 10, repeatCount: 1 },
+        id: `consecutive-fr-gift-${i}`,
+      }, 'real_tiktok')!;
+
+      // Cada evento se procesa secuencialmente sobre el estado anterior más reciente
+      currentFoodState = processFoodRushEvent(consecutiveGift, currentFoodState, targetGoalCoins, now + i * 50);
+
+      if (i < 5) {
+        assert(currentFoodState.rushCoins === i * 10, `Food Rush: Monedas acumuladas consecutivas tras regalo #${i} = ${i * 10}`);
+      }
+      assert(currentFoodState.orderQueue.length === i, `Food Rush: Cola de pedidos tiene exactamente ${i} elementos sin pérdidas`);
+      assert((currentFoodState.processedEventIds?.length ?? 0) === i, `Food Rush: Registro de IDs procesados tiene ${i} entradas`);
+    }
+
+    // Al llegar al regalo #5 con 50 monedas, debe disparar la Fiebre de Cocina (Rush Hour) y reiniciar el contador
+    assert(currentFoodState.rushCoins === 0, 'Food Rush: Contador de meta reinicia a 0 tras alcanzar el objetivo');
+    assert(currentFoodState.rushHourActiveUntil > now, 'Food Rush: Fiebre de Cocina activada al alcanzar la meta de 50 monedas');
+    assert(currentFoodState.orderQueue[0].username === 'consecutive_viewer_1', 'Food Rush: Primer pedido corresponde al primer regalo (FIFO)');
+    assert(currentFoodState.orderQueue[4].username === 'consecutive_viewer_5', 'Food Rush: Último pedido corresponde al 5to regalo (FIFO)');
+
+    // 2. Boss Battle: 4 regalos consecutivos con combo + 1 regalo mayor consecutivos
+    let currentBossState: BossState = {
+      bossHp: 1000,
+      maxHp: 1000,
+      bossState: 'idle',
+      shield: 30,
+      heroes: [],
+      userCombos: {},
+      chatCooldowns: {},
+      processedEventIds: [],
+    };
+
+    const comboAttacker = { username: 'combo_master', nickname: 'Combo Master', id: 'u_combo' };
+
+    // 4 ataques consecutivos del mismo usuario separados por 300ms (< 4s de ventana de combo)
+    // Regalo Rosa (1 diamante): base 15 daño
+    // Ataque 1: combo 1 -> 15 daño (HP: 985)
+    // Ataque 2: combo 2 -> 30 daño (HP: 955)
+    // Ataque 3: combo 3 -> 45 daño (HP: 910)
+    // Ataque 4: combo 4 -> 60 daño (HP: 850)
+    // Total daño combo_master = 150 HP
+    for (let c = 1; c <= 4; c++) {
+      const comboGift = EventNormalizer.normalize({
+        type: 'gift',
+        user: comboAttacker,
+        gift: { giftName: 'Rosa', diamondCount: 1, repeatCount: 1 },
+        id: `consecutive-bb-combo-${c}`,
+      }, 'real_tiktok')!;
+
+      currentBossState = processBossBattleEvent(comboGift, currentBossState, now + c * 300);
+      assert((currentBossState.processedEventIds?.length ?? 0) === c, `Boss Battle: Evento consecutivo #${c} registrado en processedEventIds`);
+    }
+
+    assert(currentBossState.bossHp === 850, `Boss Battle: Vida del jefe tras 4 ataques combo consecutivos es 850 (1000 - 150), actual = ${currentBossState.bossHp}`);
+    assert(currentBossState.heroes.length === 1, 'Boss Battle: Hay 1 atacante en el ranking');
+    assert(currentBossState.heroes[0].damage === 150, 'Boss Battle: Daño total acumulado por combo_master es exactamente 150');
+    assert(currentBossState.heroes[0].attacksCount === 4, 'Boss Battle: 4 ataques registrados para combo_master');
+    assert(currentBossState.heroes[0].combo === 4, 'Boss Battle: Combo actual es 4');
+
+    // 5to ataque consecutivo por un segundo usuario con regalo de alto nivel (León, 50 diamantes = 600 daño)
+    const whaleGift = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'dragon_slayer', nickname: 'Dragon Slayer', id: 'u_whale' },
+      gift: { giftName: 'León', diamondCount: 50, repeatCount: 1 },
+      id: 'consecutive-bb-whale-5',
+    }, 'real_tiktok')!;
+
+    currentBossState = processBossBattleEvent(whaleGift, currentBossState, now + 1500);
+
+    // HP pasa de 850 a 850 - 600 = 250 HP
+    assert(currentBossState.bossHp === 250, `Boss Battle: Vida del jefe tras ataque colosal consecutivo es 250 (850 - 600), actual = ${currentBossState.bossHp}`);
+    assert(currentBossState.bossState === 'hit', 'Boss Battle: Jefe entra en estado de impacto "hit"');
+    assert(currentBossState.bossHp < currentBossState.maxHp * 0.4, 'Boss Battle: Vida del jefe queda en umbral de Enfurecido (< 40% HP)');
+    assert(currentBossState.heroes.length === 2, 'Boss Battle: Ambos héroes están registrados en el ranking');
+    assert(currentBossState.heroes[0].username === 'dragon_slayer' && currentBossState.heroes[0].damage === 600, 'Boss Battle: Ranking #1 dragon_slayer con 600 dmg');
+    assert(currentBossState.heroes[1].username === 'combo_master' && currentBossState.heroes[1].damage === 150, 'Boss Battle: Ranking #2 combo_master con 150 dmg');
+    assert((currentBossState.processedEventIds?.length ?? 0) === 5, 'Boss Battle: Todos los 5 regalos consecutivos fueron procesados exitosamente');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);

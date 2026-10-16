@@ -60,10 +60,19 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
   const [soundMuted, setSoundMuted] = useState(false);
   const [recentAttack, setRecentAttack] = useState<{ user: string; text: string; gift?: string; avatarUrl?: string } | null>(null);
 
-  // Tracking de combos por usuario, enfriamientos de chat y deduplicación por ID
-  const userCombosRef = useRef<Record<string, { count: number; lastTime: number }>>({});
-  const chatCooldownRef = useRef<Record<string, number>>({});
-  const processedEventIdsRef = useRef<string[]>([]);
+  // Referencia sincrónica autoritativa con el estado más reciente del combate
+  // Garantiza que ráfagas de ataques concurrentes se procesen siempre sobre el HP y combos más recientes
+  const bossStateRef = useRef<BossBattleState>({
+    bossHp: 1000,
+    maxHp: 1000,
+    bossState: 'idle',
+    shield: 30,
+    heroes: [],
+    recentAttack: null,
+    userCombos: {},
+    chatCooldowns: {},
+    processedEventIds: [],
+  });
 
   const isEnraged = bossHp < maxHp * 0.4 && bossHp > 0;
 
@@ -72,18 +81,8 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
     (event: TikTokEvent) => {
       if (!event || !event.type) return;
 
-      const currentState: BossBattleState = {
-        bossHp,
-        maxHp,
-        bossState,
-        shield,
-        heroes,
-        recentAttack,
-        userCombos: userCombosRef.current,
-        chatCooldowns: chatCooldownRef.current,
-        processedEventIds: processedEventIdsRef.current,
-      };
-
+      // Lectura sincrónica del estado más reciente en memoria (evita stale closure ante ráfagas)
+      const currentState = bossStateRef.current;
       const result = processBossBattleEvent(event, currentState, Date.now());
 
       // Si fue detectado como duplicado por ID, no aplicar daño ni efectos repetidos
@@ -91,9 +90,18 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
         return;
       }
 
-      processedEventIdsRef.current = result.processedEventIds || [];
-      userCombosRef.current = result.userCombos || {};
-      chatCooldownRef.current = result.chatCooldowns || {};
+      // Actualizar sincrónicamente la referencia ANTES de despachar a React
+      bossStateRef.current = {
+        ...bossStateRef.current,
+        bossHp: result.bossHp,
+        bossState: result.bossState,
+        shield: result.shield,
+        heroes: result.heroes,
+        recentAttack: result.recentAttack,
+        userCombos: result.userCombos || {},
+        chatCooldowns: result.chatCooldowns || {},
+        processedEventIds: result.processedEventIds || [],
+      };
 
       setBossHp(result.bossHp);
       setBossState(result.bossState);
@@ -113,7 +121,7 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
 
         if (result.bossHp > 0) {
           setTimeout(() => {
-            setBossState((curr) => (curr === 'hit' ? (result.bossHp < maxHp * 0.4 ? 'enraged' : 'idle') : curr));
+            setBossState((curr) => (curr === 'hit' ? (bossStateRef.current.bossHp < maxHp * 0.4 ? 'enraged' : 'idle') : curr));
           }, 350);
         }
 
@@ -151,62 +159,73 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
         }, 1400);
       }
     },
-    [bossHp, maxHp, bossState, shield, heroes, recentAttack]
+    [] // Callback estable
   );
 
-  // Manejo de eventos de bus local y SSE del servidor
+  const handleGameAction = useCallback((actionPayload: any) => {
+    if (!actionPayload || actionPayload.action !== 'BOSS_ATTACK') return;
+    const currentState = bossStateRef.current;
+    const result = processBossBattleAction(actionPayload, currentState, Date.now());
+
+    bossStateRef.current = {
+      ...bossStateRef.current,
+      bossHp: result.bossHp,
+      bossState: result.bossState,
+      heroes: result.heroes,
+      recentAttack: result.recentAttack,
+      userCombos: result.userCombos || {},
+      chatCooldowns: result.chatCooldowns || {},
+      processedEventIds: result.processedEventIds || [],
+    };
+
+    setBossHp(result.bossHp);
+    setBossState(result.bossState);
+    setHeroes(result.heroes);
+
+    if (result.recentAttack) {
+      setRecentAttack(result.recentAttack);
+      setTimeout(() => setRecentAttack(null), 2500);
+    }
+
+    if (result.damageDealt && result.damageDealt > 0 && result.attacker) {
+      const finalDamage = result.damageDealt;
+      const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
+      const newPop: DamagePop = {
+        id: popId,
+        x: 35 + Math.random() * 30,
+        y: 35 + Math.random() * 20,
+        damage: finalDamage,
+        isCrit: Boolean(result.isCrit),
+        username: result.attacker.username,
+        comboCount: (result.combo || 1) > 1 ? result.combo : undefined,
+      };
+      setDamagePops((prev) => [...prev.slice(-20), newPop]);
+      setTimeout(() => setDamagePops((prev) => prev.filter((p) => p.id !== popId)), 1400);
+    }
+  }, []); // Callback estable
+
+  // Referencias a los handlers para evitar resuscripciones innecesarias al EventBus y SSE
+  const handleIncomingEventRef = useRef(handleIncomingEvent);
+  handleIncomingEventRef.current = handleIncomingEvent;
+
+  const handleGameActionRef = useRef(handleGameAction);
+  handleGameActionRef.current = handleGameAction;
+
+  // Manejo de eventos de bus local y SSE del servidor (suscripción única y permanente al montar)
   useEffect(() => {
     const unsubBus = eventBus.subscribe((msg) => {
       if (msg.type === 'TIKTOK_EVENT_RECEIVED') {
-        handleIncomingEvent(msg.payload);
+        handleIncomingEventRef.current(msg.payload);
       } else if (msg.type === 'GAME_ACTION_RECEIVED' && msg.payload?.action === 'BOSS_ATTACK') {
-        const currentState: BossBattleState = {
-          bossHp,
-          maxHp,
-          bossState,
-          shield,
-          heroes,
-          recentAttack,
-          userCombos: userCombosRef.current,
-          chatCooldowns: chatCooldownRef.current,
-          processedEventIds: processedEventIdsRef.current,
-        };
-
-        const result = processBossBattleAction(msg.payload, currentState, Date.now());
-        processedEventIdsRef.current = result.processedEventIds || [];
-        userCombosRef.current = result.userCombos || {};
-        chatCooldownRef.current = result.chatCooldowns || {};
-
-        setBossHp(result.bossHp);
-        setBossState(result.bossState);
-        setHeroes(result.heroes);
-
-        if (result.recentAttack) {
-          setRecentAttack(result.recentAttack);
-          setTimeout(() => setRecentAttack(null), 2500);
-        }
-
-        if (result.damageDealt && result.damageDealt > 0 && result.attacker) {
-          const finalDamage = result.damageDealt;
-          const popId = 'pop-' + Math.random().toString(36).substring(2, 7);
-          const newPop: DamagePop = {
-            id: popId,
-            x: 35 + Math.random() * 30,
-            y: 35 + Math.random() * 20,
-            damage: finalDamage,
-            isCrit: Boolean(result.isCrit),
-            username: result.attacker.username,
-            comboCount: (result.combo || 1) > 1 ? result.combo : undefined,
-          };
-          setDamagePops((prev) => [...prev.slice(-20), newPop]);
-          setTimeout(() => setDamagePops((prev) => prev.filter((p) => p.id !== popId)), 1400);
-        }
+        handleGameActionRef.current(msg.payload);
       }
     });
 
     const unsubSSE = apiService.onSSEMessage((data) => {
       if (data.type === 'TIKTOK_EVENT' && data.payload) {
-        handleIncomingEvent(data.payload);
+        handleIncomingEventRef.current(data.payload);
+      } else if (data.type === 'GAME_ACTION' && data.payload?.action === 'BOSS_ATTACK') {
+        handleGameActionRef.current(data.payload);
       }
     });
 
@@ -214,16 +233,26 @@ export const BossBattleGame: React.FC<BossBattleGameProps> = ({
       unsubBus();
       unsubSSE();
     };
-  }, [handleIncomingEvent, bossHp, maxHp, bossState, shield, heroes, recentAttack]);
+  }, []); // Sin dependencias: subscripción única al montar, nunca se desuscribe por cambios de estado
 
   const handleResetBoss = () => {
+    bossStateRef.current = {
+      bossHp: maxHp,
+      maxHp,
+      bossState: 'idle',
+      shield: 30,
+      heroes: [],
+      recentAttack: null,
+      userCombos: {},
+      chatCooldowns: {},
+      processedEventIds: bossStateRef.current.processedEventIds || [],
+    };
     setBossHp(maxHp);
     setBossState('idle');
     setShield(30);
     setDamagePops([]);
     setProjectiles([]);
-    userCombosRef.current = {};
-    chatCooldownRef.current = {};
+    setRecentAttack(null);
   };
 
   const hpPercent = (bossHp / maxHp) * 100;
