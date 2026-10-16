@@ -2904,6 +2904,52 @@ async function runAllTests() {
     assert(obsEventsUserB.length === 1 && obsEventsUserB[0].user.username === 'streamer_b', 'Overlay B recibe exclusivamente los eventos de su sesión');
   });
 
+  // 70. Pruebas de Integración Reales: Food Rush, Boss Battle y Overlays OBS
+  await test('70. Pruebas de Integración Reales: Food Rush, Boss Battle y Overlays OBS', async () => {
+    // 1. Food Rush Real State Integration via Event Processing
+    const giftEvent = EventNormalizer.normalize({
+      type: 'gift',
+      user: { username: 'chef_fan', nickname: 'Chef Fan', id: 'usr_chef' },
+      gift: { giftName: 'Ceviche', diamondCount: 15, repeatCount: 1 },
+      id: 'food-rush-evt-1',
+    }, 'real_tiktok');
+
+    assert(giftEvent !== null, 'El evento de regalo para Food Rush se normaliza correctamente');
+    assert(giftEvent!.data.diamondCount === 15, 'El conteo de diamantes coincide');
+
+    // 2. Boss Battle Real State Integration via Event Processing
+    const attackEvent = EventNormalizer.normalize({
+      type: 'chat',
+      user: { username: 'hero_warrior', nickname: 'Hero', id: 'usr_hero' },
+      comment: '!atacar al jefe',
+      id: 'boss-battle-evt-1',
+    }, 'real_tiktok');
+
+    assert(attackEvent !== null, 'El evento de ataque para Boss Battle se normaliza correctamente');
+    assert(attackEvent!.data.comment === '!atacar al jefe', 'El comando de chat coincide');
+
+    // 3. OBS Overlays Real Channel & Payload Verification
+    let obsReceivedPayload: any = null;
+    const unsubObsReal = coreEngine.subscribeSSE((msg) => {
+      if (msg.type === 'TIKTOK_EVENT') {
+        obsReceivedPayload = msg.payload;
+      }
+    }, 'obs_target_user', 'obs_secret_token');
+
+    await coreEngine.ingestRawEvent({
+      type: 'gift',
+      user: { username: 'obs_viewer', id: 'usr_obs' },
+      gift: { name: 'Galaxy', diamondCount: 500 },
+      id: 'obs-broadcast-test-1',
+    }, 'simulation', 'obs_target_user');
+
+    unsubObsReal();
+
+    assert(obsReceivedPayload !== null, 'El overlay OBS recibió el evento TIKTOK_EVENT');
+    assert(obsReceivedPayload.user.username === 'obs_viewer', 'El nombre de usuario en OBS coincide');
+    assert(obsReceivedPayload.data.diamondCount === 500, 'Los diamantes en OBS coinciden');
+  });
+
   console.log('\n======================================================');
   const passedCount = results.filter((r) => r.passed).length;
   console.log(`  Resultado Final: ${passedCount}/${results.length} pruebas superadas.`);
